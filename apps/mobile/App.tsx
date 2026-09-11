@@ -607,7 +607,7 @@ export default function App() {
         style={styles.authScreen}
       >
         <View style={styles.authCard}>
-          <Text style={styles.eyebrow}>Finance App</Text>
+          <Text style={styles.eyebrow}>Agenda de Pagamentos 2.0</Text>
           <Text style={styles.title}>
             {adminLogin ? 'Acesso administrativo' : authMode === 'login' ? 'Acessar conta' : 'Criar conta'}
           </Text>
@@ -649,7 +649,7 @@ export default function App() {
           data={adminData?.users ?? []}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.content}
-          ListHeaderComponent={<View style={styles.adminHeader}><View><Text style={styles.eyebrow}>Finance App</Text><Text style={styles.pageTitle}>Administração</Text><Text style={styles.userLabel}>Olá, {user.name}</Text></View><Pressable style={styles.logoutButton} onPress={logout}><Text style={styles.logoutButtonText}>Sair</Text></Pressable></View>}
+          ListHeaderComponent={<View style={styles.adminHeader}><View><Text style={styles.eyebrow}>Agenda de Pagamentos 2.0</Text><Text style={styles.pageTitle}>Administração</Text><Text style={styles.userLabel}>Olá, {user.name}</Text></View><Pressable style={styles.logoutButton} onPress={logout}><Text style={styles.logoutButtonText}>Sair</Text></Pressable></View>}
           renderItem={({ item }) => (
             <View style={[styles.adminUserCard, selectedAdminUserId === item.id && styles.adminUserCardSelected]}>
               <Pressable style={styles.adminUserInfo} onPress={() => setSelectedAdminUserId(item.id)}>
@@ -681,7 +681,7 @@ export default function App() {
             {/* HEADER */}
             <View style={styles.header}>
               <View style={styles.headerText}>
-                <Text style={styles.eyebrow}>Finance App</Text>
+                <Text style={styles.eyebrow}>Agenda de Pagamentos 2.0</Text>
                 <Text style={[styles.pageTitle, compact && styles.pageTitleCompact]}>
                   Dashboard
                 </Text>

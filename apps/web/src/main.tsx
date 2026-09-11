@@ -398,7 +398,7 @@ function App() {
     return (
       <main className="auth-shell">
         <div className="auth-card">
-          <p className="eyebrow">Finance App</p>
+          <p className="eyebrow">Agenda de Pagamentos 2.0</p>
           <h1>{adminLogin ? 'Acesso administrativo' : authMode === 'login' ? 'Acessar conta' : 'Criar conta'}</h1>
 
           {adminLogin ? (
@@ -433,7 +433,7 @@ function App() {
     <main className="page-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Finance App</p>
+          <p className="eyebrow">Agenda de Pagamentos 2.0</p>
           <h1>{adminView ? 'Painel administrativo' : 'Dashboard financeiro'}</h1>
           <p className="user-label">Olá, {user.name}</p>
         </div>

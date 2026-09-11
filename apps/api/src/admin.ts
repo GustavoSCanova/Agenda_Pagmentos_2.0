@@ -1,13 +1,13 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export type AdminCredentials = {
   email: string;
   password: string;
 };
 
-const configPath = path.join(process.cwd(), 'admin.local.json');
+const configPath = fileURLToPath(new URL('../admin.local.json', import.meta.url));
 
 const getAdminCredentials = (): AdminCredentials => {
   if (!fs.existsSync(configPath)) {

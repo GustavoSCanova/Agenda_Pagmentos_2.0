@@ -22,4 +22,4 @@ export type Summary = {
   balance: number;
 };
 
-export const APP_NAME = 'A New Project';
+export const APP_NAME = 'Agenda de Pagamentos 2.0';

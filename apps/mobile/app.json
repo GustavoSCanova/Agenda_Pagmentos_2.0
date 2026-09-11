@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "A New Project",
-    "slug": "a-new-project",
+    "name": "Agenda de Pagamentos 2.0",
+    "slug": "agenda-pagamentos-2-0",
     "version": "1.0.0",
     "orientation": "portrait",
     "platforms": ["ios", "android", "web"],
