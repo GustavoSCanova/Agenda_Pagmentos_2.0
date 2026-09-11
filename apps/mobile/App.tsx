@@ -158,6 +158,7 @@ export default function App() {
   const { width } = useWindowDimensions();
   const compact = width < 390;
 
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'new' | 'admin'>('dashboard');
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [summary, setSummary] = useState<Summary>({
@@ -178,7 +179,6 @@ export default function App() {
   const [loading, setLoading] = useState(false);
 
   // Histórico:
-  const [historyExpanded, setHistoryExpanded] = useState(false);
   const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
 
   // Comparação mensal:
@@ -212,9 +212,11 @@ export default function App() {
     return Array.from(groups.entries());
   }, [transactions]);
 
-  const visibleGroups = historyExpanded
-    ? groupedTransactions
-    : groupedTransactions.slice(0, 2);
+  const recentTransactions = useMemo(() => {
+    return [...transactions]
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+      .slice(0, 4);
+  }, [transactions]);
 
   const loadData = async (authToken: string) => {
     const [transactionsData, summaryData] = await Promise.all([
@@ -402,6 +404,8 @@ export default function App() {
 
       setForm(emptyForm);
       await loadData(token);
+      setActiveTab('dashboard');
+      Alert.alert('Sucesso', 'Transação registrada com sucesso!');
     } catch (error) {
       Alert.alert(
         'Erro',
@@ -613,181 +617,351 @@ export default function App() {
           </Text>
 
           {adminLogin ? (
-            <>
-              <TextInput style={styles.input} placeholder="E-mail do administrador" autoCapitalize="none" keyboardType="email-address" value={authData.email} onChangeText={(value) => setAuthData((current) => ({ ...current, email: value }))} />
-              <TextInput style={styles.input} placeholder="Senha do administrador" secureTextEntry value={authData.password} onChangeText={(value) => setAuthData((current) => ({ ...current, password: value }))} />
+            <View style={styles.authFieldsContainer}>
+              <TextInput style={styles.input} placeholder="E-mail do administrador" placeholderTextColor="#94a3b8" autoCapitalize="none" keyboardType="email-address" value={authData.email} onChangeText={(value) => setAuthData((current) => ({ ...current, email: value }))} />
+              <TextInput style={styles.input} placeholder="Senha do administrador" placeholderTextColor="#94a3b8" secureTextEntry value={authData.password} onChangeText={(value) => setAuthData((current) => ({ ...current, password: value }))} />
               <Pressable style={styles.primaryButton} onPress={handleAuthSubmit} disabled={loading}><Text style={styles.primaryButtonText}>{loading ? 'Aguarde...' : 'Entrar como administrador'}</Text></Pressable>
               <Pressable style={styles.textButton} onPress={() => setAdminLogin(false)}><Text style={styles.textButtonLabel}>Voltar</Text></Pressable>
-            </>
+            </View>
           ) : (
-            <>
+            <View style={styles.authFieldsContainer}>
               <View style={styles.switchRow}>
-                <Pressable style={[styles.switchButton, authMode === 'login' && styles.switchButtonActive]} onPress={() => setAuthMode('login')}><Text style={styles.switchText}>Login</Text></Pressable>
-                <Pressable style={[styles.switchButton, authMode === 'register' && styles.switchButtonActive]} onPress={() => setAuthMode('register')}><Text style={styles.switchText}>Registrar</Text></Pressable>
+                <Pressable style={[styles.switchButton, authMode === 'login' && styles.switchButtonActive]} onPress={() => setAuthMode('login')}><Text style={[styles.switchText, authMode === 'login' && styles.switchTextActive]}>Login</Text></Pressable>
+                <Pressable style={[styles.switchButton, authMode === 'register' && styles.switchButtonActive]} onPress={() => setAuthMode('register')}><Text style={[styles.switchText, authMode === 'register' && styles.switchTextActive]}>Registrar</Text></Pressable>
               </View>
-              {authMode === 'register' && <TextInput style={styles.input} placeholder="Nome" value={authData.name} onChangeText={(value) => setAuthData((current) => ({ ...current, name: value }))} />}
-              <TextInput style={styles.input} placeholder="E-mail" autoCapitalize="none" keyboardType="email-address" value={authData.email} onChangeText={(value) => setAuthData((current) => ({ ...current, email: value }))} />
-              <TextInput style={styles.input} placeholder="Senha" secureTextEntry value={authData.password} onChangeText={(value) => setAuthData((current) => ({ ...current, password: value }))} />
+              {authMode === 'register' && <TextInput style={styles.input} placeholder="Nome" placeholderTextColor="#94a3b8" value={authData.name} onChangeText={(value) => setAuthData((current) => ({ ...current, name: value }))} />}
+              <TextInput style={styles.input} placeholder="E-mail" placeholderTextColor="#94a3b8" autoCapitalize="none" keyboardType="email-address" value={authData.email} onChangeText={(value) => setAuthData((current) => ({ ...current, email: value }))} />
+              <TextInput style={styles.input} placeholder="Senha" placeholderTextColor="#94a3b8" secureTextEntry value={authData.password} onChangeText={(value) => setAuthData((current) => ({ ...current, password: value }))} />
               <Pressable style={styles.primaryButton} onPress={handleAuthSubmit} disabled={loading}><Text style={styles.primaryButtonText}>{loading ? 'Aguarde...' : authMode === 'login' ? 'Entrar' : 'Criar conta'}</Text></Pressable>
               {authMode === 'login' && <Pressable style={styles.textButton} onPress={() => setAdminLogin(true)}><Text style={styles.textButtonLabel}>Acesso administrador</Text></Pressable>}
-            </>
+            </View>
           )}
         </View>
 
-        <StatusBar style="auto" />
+        <StatusBar style="dark" />
       </KeyboardAvoidingView>
     );
   }
 
-  if (user.role === 'admin') {
-    const selectedUser = (adminData?.users ?? []).find((item) => item.id === selectedAdminUserId);
-    const selectedTransactions = (adminData?.transactions ?? []).filter((item) => item.userId === selectedAdminUserId);
-
-    return (
-      <View style={styles.screen}>
-        <FlatList
-          data={adminData?.users ?? []}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.content}
-          ListHeaderComponent={<View style={styles.adminHeader}><View><Text style={styles.eyebrow}>Agenda de Pagamentos 2.0</Text><Text style={styles.pageTitle}>Administração</Text><Text style={styles.userLabel}>Olá, {user.name}</Text></View><Pressable style={styles.logoutButton} onPress={logout}><Text style={styles.logoutButtonText}>Sair</Text></Pressable></View>}
-          renderItem={({ item }) => (
-            <View style={[styles.adminUserCard, selectedAdminUserId === item.id && styles.adminUserCardSelected]}>
-              <Pressable style={styles.adminUserInfo} onPress={() => setSelectedAdminUserId(item.id)}>
-                <Text style={styles.transactionTitle}>{item.name}</Text>
-                <Text style={styles.transactionMeta}>{item.email}</Text>
-              </Pressable>
-              <View style={styles.adminUserActions}>
-                <Pressable style={styles.adminEditButton} onPress={() => setEditingAdminUser({ ...item, password: '' })}><Text style={styles.adminActionText}>Editar</Text></Pressable>
-                <Pressable style={styles.adminDeleteButton} onPress={() => handleAdminUserDelete(item)}><Text style={styles.adminActionText}>Excluir</Text></Pressable>
-              </View>
-            </View>
-          )}
-          ListFooterComponent={<View style={styles.adminTransactions}><Text style={styles.cardTitle}>{selectedUser ? `Transações de ${selectedUser.name}` : 'Dados do usuário'}</Text>{!selectedUser ? <Text style={styles.emptyText}>Toque em um usuário para visualizar suas transações.</Text> : selectedTransactions.length === 0 ? <Text style={styles.emptyText}>Este usuário ainda não possui transações.</Text> : selectedTransactions.map((item) => <View key={item.id} style={[styles.transactionItem, item.type === 'income' ? styles.incomeItem : styles.expenseItem]}><View style={styles.transactionInfo}><Text style={styles.transactionTitle}>{item.title}</Text><Text style={styles.transactionMeta}>{item.category} · {item.date}</Text></View><Text style={styles.transactionAmount}>{item.type === 'income' ? '+' : '-'} {formatCurrency(item.amount)}</Text></View>)}</View>}
-        />
-        <Modal visible={editingAdminUser !== null} transparent animationType="slide" onRequestClose={() => setEditingAdminUser(null)}>
-          <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><View style={styles.modalCard}><Text style={styles.modalTitle}>Editar usuário</Text><TextInput style={styles.input} placeholder="E-mail" autoCapitalize="none" keyboardType="email-address" value={editingAdminUser?.email ?? ''} onChangeText={(value) => setEditingAdminUser((current) => current && { ...current, email: value })} /><TextInput style={styles.input} placeholder="Nova senha (opcional)" secureTextEntry value={editingAdminUser?.password ?? ''} onChangeText={(value) => setEditingAdminUser((current) => current && { ...current, password: value })} /><Pressable style={styles.primaryButton} onPress={handleAdminUserUpdate} disabled={loading}><Text style={styles.primaryButtonText}>Salvar</Text></Pressable><Pressable style={styles.cancelButton} onPress={() => setEditingAdminUser(null)}><Text style={styles.cancelButtonText}>Cancelar</Text></Pressable></View></KeyboardAvoidingView>
-        </Modal>
-        <StatusBar style="auto" />
-      </View>
-    );
-  }
+  const selectedUser = (adminData?.users ?? []).find((item) => item.id === selectedAdminUserId);
+  const selectedTransactions = (adminData?.transactions ?? []).filter((item) => item.userId === selectedAdminUserId);
 
   return (
     <View style={styles.screen}>
-      <FlatList
-        data={[]}
-        ListHeaderComponent={
-          <>
-            {/* HEADER */}
-            <View style={styles.header}>
-              <View style={styles.headerText}>
-                <Text style={styles.eyebrow}>Agenda de Pagamentos 2.0</Text>
-                <Text style={[styles.pageTitle, compact && styles.pageTitleCompact]}>
-                  Dashboard
-                </Text>
-                <Text style={styles.userLabel} numberOfLines={1}>
-                  Olá, {user.name}
-                </Text>
-              </View>
+      {/* HEADER FIXO SUPERIOR */}
+      <View style={styles.topHeader}>
+        <View style={styles.topHeaderLeft}>
+          <Text style={styles.eyebrow}>Agenda de Pagamentos 2.0</Text>
+          <Text style={styles.welcomeTitle}>Olá, {user.name}</Text>
+        </View>
+        <Pressable style={styles.logoutButton} onPress={logout}>
+          <Text style={styles.logoutButtonText}>Sair</Text>
+        </Pressable>
+      </View>
 
-              <Pressable style={styles.logoutButton} onPress={logout}>
-                <Text style={styles.logoutButtonText}>Sair</Text>
-              </Pressable>
-            </View>
-
-            {/* RESUMO TOTAL */}
-            <View style={styles.summaryRow}>
-              {[
-                ['Receitas', summary.income, styles.incomeCard],
-                ['Despesas', summary.expense, styles.expenseCard],
-                ['Saldo', summary.balance, styles.balanceCard],
-              ].map(([label, value, cardStyle]) => (
-                <View
-                  key={String(label)}
-                  style={[styles.summaryCard, cardStyle as object]}
-                >
-                  <Text style={styles.summaryLabel}>{String(label)}</Text>
-                  <Text
-                    style={[styles.summaryValue, compact && styles.summaryValueCompact]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.72}
-                  >
-                    {formatCurrency(Number(value))}
-                  </Text>
+      {/* CONTEÚDO DA ABA ATIVA */}
+      {activeTab === 'dashboard' && (
+        <FlatList
+          data={[]}
+          renderItem={null}
+          keyExtractor={() => 'dashboard'}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.tabContent}
+          ListHeaderComponent={
+            <>
+              {/* CARD DE SALDO PRINCIPAL */}
+              <View style={styles.mainBalanceCard}>
+                <View style={styles.mainBalanceHeader}>
+                  <Text style={styles.mainBalanceLabel}>Saldo Total Disponível</Text>
+                  <View style={styles.statusPill}>
+                    <Text style={styles.statusPillText}>Ativo</Text>
+                  </View>
                 </View>
-              ))}
-            </View>
-
-            {/* NOVA TRANSAÇÃO */}
-            <View style={styles.formCard}>
-              <Text style={styles.cardTitle}>Nova transação</Text>
-
-              <TextInput
-                style={styles.input}
-                placeholder="Título"
-                value={form.title}
-                onChangeText={(value) =>
-                  setForm((current) => ({ ...current, title: value }))
-                }
-              />
-
-              <View style={styles.rowTwo}>
-                <TextInput
-                  style={[styles.input, styles.halfInput]}
-                  placeholder="Valor"
-                  keyboardType="decimal-pad"
-                  value={form.amount}
-                  onChangeText={(value) =>
-                    setForm((current) => ({ ...current, amount: value }))
-                  }
-                />
-
-                <TextInput
-                  style={[styles.input, styles.halfInput]}
-                  placeholder="Categoria"
-                  value={form.category}
-                  onChangeText={(value) =>
-                    setForm((current) => ({ ...current, category: value }))
-                  }
-                />
+                <Text
+                  style={styles.mainBalanceValue}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {formatCurrency(summary.balance)}
+                </Text>
+                <View style={styles.mainBalanceDivider} />
+                <View style={styles.mainBalanceStats}>
+                  <View style={styles.miniStat}>
+                    <Text style={styles.miniStatLabel}>↓ Entradas</Text>
+                    <Text style={styles.miniStatIncome}>{formatCurrency(summary.income)}</Text>
+                  </View>
+                  <View style={styles.miniStatSeparator} />
+                  <View style={styles.miniStat}>
+                    <Text style={styles.miniStatLabel}>↑ Saídas</Text>
+                    <Text style={styles.miniStatExpense}>{formatCurrency(summary.expense)}</Text>
+                  </View>
+                </View>
               </View>
 
-              <View style={styles.rowTwo}>
-                <TextInput
-                  style={[styles.input, styles.halfInput]}
-                  placeholder="Data"
-                  value={form.date}
-                  onChangeText={(value) =>
-                    setForm((current) => ({ ...current, date: value }))
-                  }
-                />
+              {/* ATALHO RÁPIDO PARA NOVA TRANSAÇÃO */}
+              <Pressable
+                style={styles.quickAddBanner}
+                onPress={() => setActiveTab('new')}
+              >
+                <View style={styles.quickAddIconWrapper}>
+                  <Text style={styles.quickAddIcon}>➕</Text>
+                </View>
+                <View style={styles.quickAddText}>
+                  <Text style={styles.quickAddTitle}>Nova Movimentação</Text>
+                  <Text style={styles.quickAddSubtitle}>Cadastre uma receita ou despesa</Text>
+                </View>
+                <Text style={styles.quickAddArrow}>›</Text>
+              </Pressable>
 
-                <Pressable
-                  style={[
-                    styles.typeButton,
-                    form.type === 'income' && styles.typeButtonIncome,
-                  ]}
-                  onPress={() =>
-                    setForm((current) => ({
-                      ...current,
-                      type: current.type === 'income' ? 'expense' : 'income',
-                    }))
-                  }
-                >
-                  <Text style={styles.typeButtonText}>
-                    {form.type === 'income' ? 'Receita' : 'Despesa'}
-                  </Text>
+              {/* COMPARAÇÃO MENSAL */}
+              <View style={styles.cleanCard}>
+                <View style={styles.cardHeaderRow}>
+                  <View>
+                    <Text style={styles.cardTitle}>Comparativo Mensal</Text>
+                    <Text style={styles.cardSubtitle}>{monthLabel(selectedMonth)}</Text>
+                  </View>
+                  <View style={styles.monthControls}>
+                    <Pressable style={styles.monthArrow} onPress={() => changeMonth(-1)}>
+                      <Text style={styles.monthArrowText}>‹</Text>
+                    </Pressable>
+                    <Pressable style={styles.monthArrow} onPress={() => changeMonth(1)}>
+                      <Text style={styles.monthArrowText}>›</Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                <View style={styles.compareMonthsTag}>
+                  <Text style={styles.compareMonthText}>{monthLabel(previousMonth)}</Text>
+                  <Text style={styles.compareVs}>vs.</Text>
+                  <Text style={[styles.compareMonthText, styles.compareMonthActive]}>{monthLabel(selectedMonth)}</Text>
+                </View>
+
+                <View style={styles.compareRow}>
+                  <View style={styles.compareItem}>
+                    <Text style={styles.compareLabel}>Receitas</Text>
+                    <Text style={styles.compareValue}>{formatCurrency(monthlySummary.income)}</Text>
+                    <Text style={styles.comparePrevious}>ant: {formatCurrency(previousMonthlySummary.income)}</Text>
+                  </View>
+
+                  <View style={styles.compareItem}>
+                    <Text style={styles.compareLabel}>Despesas</Text>
+                    <Text style={styles.compareValue}>{formatCurrency(monthlySummary.expense)}</Text>
+                    <Text style={styles.comparePrevious}>ant: {formatCurrency(previousMonthlySummary.expense)}</Text>
+                    <Text style={[styles.variation, expenseVariation !== null && expenseVariation > 0 ? styles.variationRed : styles.variationGreen]}>
+                      {expenseVariation === null ? 'Sem base' : `${expenseVariation >= 0 ? '↑' : '↓'} ${Math.abs(expenseVariation).toFixed(1)}%`}
+                    </Text>
+                  </View>
+
+                  <View style={styles.compareItem}>
+                    <Text style={styles.compareLabel}>Saldo</Text>
+                    <Text style={styles.compareValue}>{formatCurrency(monthlySummary.balance)}</Text>
+                    <Text style={styles.comparePrevious}>ant: {formatCurrency(previousMonthlySummary.balance)}</Text>
+                    <Text style={[styles.variation, balanceVariation !== null && balanceVariation >= 0 ? styles.variationGreen : styles.variationRed]}>
+                      {balanceVariation === null ? 'Sem base' : `${balanceVariation >= 0 ? '↑' : '↓'} ${Math.abs(balanceVariation).toFixed(1)}%`}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* ÚLTIMAS TRANSAÇÕES */}
+              <View style={styles.cleanCard}>
+                <View style={styles.cardHeaderRow}>
+                  <Text style={styles.cardTitle}>Recentes</Text>
+                  <Pressable onPress={() => setActiveTab('history')}>
+                    <Text style={styles.viewAllLink}>Ver extrato completo →</Text>
+                  </Pressable>
+                </View>
+
+                {recentTransactions.length === 0 ? (
+                  <Text style={styles.emptyStateText}>Nenhuma movimentação cadastrada ainda.</Text>
+                ) : (
+                  recentTransactions.map((item) => (
+                    <View key={item.id} style={styles.recentItem}>
+                      <View style={[styles.typePillIcon, item.type === 'income' ? styles.typePillIncome : styles.typePillExpense]}>
+                        <Text style={styles.typePillText}>{item.type === 'income' ? '↓' : '↑'}</Text>
+                      </View>
+                      <View style={styles.recentInfo}>
+                        <Text style={styles.recentTitle} numberOfLines={1}>{item.title}</Text>
+                        <Text style={styles.recentMeta}>{item.category} · {item.date}</Text>
+                      </View>
+                      <Text style={[styles.recentAmount, item.type === 'income' ? styles.recentAmountIncome : styles.recentAmountExpense]}>
+                        {item.type === 'income' ? '+' : '-'} {formatCurrency(item.amount)}
+                      </Text>
+                    </View>
+                  ))
+                )}
+              </View>
+            </>
+          }
+        />
+      )}
+
+      {activeTab === 'history' && (
+        <FlatList
+          data={[]}
+          renderItem={null}
+          keyExtractor={() => 'history'}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.tabContent}
+          ListHeaderComponent={
+            <>
+              <View style={styles.tabHeader}>
+                <View>
+                  <Text style={styles.tabHeading}>Extrato Completo</Text>
+                  <Text style={styles.tabSubheading}>{transactions.length} movimentação(ões) no total</Text>
+                </View>
+              </View>
+
+              {/* BOTÕES DE PLANILHA */}
+              <View style={styles.actionButtonsRow}>
+                <Pressable style={[styles.fileActionBtn, styles.exportBtn]} onPress={handleExport} disabled={loading}>
+                  <Text style={styles.fileActionBtnText}>📥 Exportar Excel</Text>
+                </Pressable>
+                <Pressable style={[styles.fileActionBtn, styles.importBtn]} onPress={handleImport} disabled={loading}>
+                  <Text style={[styles.fileActionBtnText, styles.importBtnText]}>📤 Importar Planilha</Text>
                 </Pressable>
               </View>
 
+              {/* LISTA AGRUPADA */}
+              {groupedTransactions.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <Text style={styles.emptyCardTitle}>Nenhuma movimentação</Text>
+                  <Text style={styles.emptyCardSubtitle}>Use a aba "Nova" ou importe uma planilha para começar.</Text>
+                </View>
+              ) : (
+                groupedTransactions.map(([month, monthTransactions]) => {
+                  const expanded = expandedMonths[month] ?? true;
+                  const monthTotal = getMonthlySummary(transactions, month);
+
+                  return (
+                    <View key={month} style={styles.monthGroupCard}>
+                      <Pressable
+                        style={styles.monthGroupHeader}
+                        onPress={() => setExpandedMonths((current) => ({ ...current, [month]: !expanded }))}
+                      >
+                        <View>
+                          <Text style={styles.monthGroupTitle}>{monthLabel(month)}</Text>
+                          <Text style={styles.monthGroupMeta}>
+                            {monthTransactions.length} itens · Saldo {formatCurrency(monthTotal.balance)}
+                          </Text>
+                        </View>
+                        <Text style={styles.chevron}>{expanded ? '⌃' : '⌄'}</Text>
+                      </Pressable>
+
+                      {expanded &&
+                        monthTransactions.map((item) => (
+                          <View key={item.id} style={styles.transactionRow}>
+                            <View style={[styles.typePillIcon, item.type === 'income' ? styles.typePillIncome : styles.typePillExpense]}>
+                              <Text style={styles.typePillText}>{item.type === 'income' ? '↓' : '↑'}</Text>
+                            </View>
+                            <View style={styles.transactionRowInfo}>
+                              <Text style={styles.transactionRowTitle} numberOfLines={1}>{item.title}</Text>
+                              <Text style={styles.transactionRowMeta}>{item.category} · {item.date}</Text>
+                              {!!item.description && <Text style={styles.transactionRowDesc} numberOfLines={1}>{item.description}</Text>}
+                            </View>
+
+                            <View style={styles.transactionRowRight}>
+                              <Text style={[styles.transactionRowAmount, item.type === 'income' ? styles.recentAmountIncome : styles.recentAmountExpense]}>
+                                {item.type === 'income' ? '+' : '-'} {formatCurrency(item.amount)}
+                              </Text>
+                              <View style={styles.rowActions}>
+                                <Pressable style={styles.iconButton} onPress={() => handleEditStart(item)}>
+                                  <Text style={styles.iconButtonText}>✏️</Text>
+                                </Pressable>
+                                <Pressable style={styles.iconButtonDanger} onPress={() => handleDeleteTransaction(item)}>
+                                  <Text style={styles.iconButtonText}>🗑️</Text>
+                                </Pressable>
+                              </View>
+                            </View>
+                          </View>
+                        ))}
+                    </View>
+                  );
+                })
+              )}
+            </>
+          }
+        />
+      )}
+
+      {activeTab === 'new' && (
+        <FlatList
+          data={[]}
+          renderItem={null}
+          keyExtractor={() => 'new'}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.tabContent}
+          ListHeaderComponent={
+            <View style={styles.cleanCard}>
+              <Text style={styles.tabHeading}>Nova Movimentação</Text>
+              <Text style={styles.tabSubheading}>Preencha os dados abaixo para salvar</Text>
+
+              {/* SELETOR RECEITA / DESPESA */}
+              <View style={styles.typeSelectorRow}>
+                <Pressable
+                  style={[styles.typeOption, form.type === 'income' && styles.typeOptionIncomeActive]}
+                  onPress={() => setForm((c) => ({ ...c, type: 'income' }))}
+                >
+                  <Text style={[styles.typeOptionText, form.type === 'income' && styles.typeOptionTextActive]}>↓ Receita</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.typeOption, form.type === 'expense' && styles.typeOptionExpenseActive]}
+                  onPress={() => setForm((c) => ({ ...c, type: 'expense' }))}
+                >
+                  <Text style={[styles.typeOptionText, form.type === 'expense' && styles.typeOptionTextActive]}>↑ Despesa</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.inputLabel}>Título da transação</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Descrição"
+                placeholder="Ex: Salário, Aluguel, Supermercado"
+                placeholderTextColor="#94a3b8"
+                value={form.title}
+                onChangeText={(value) => setForm((current) => ({ ...current, title: value }))}
+              />
+
+              <View style={styles.rowTwo}>
+                <View style={styles.halfInput}>
+                  <Text style={styles.inputLabel}>Valor (R$)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="0,00"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="decimal-pad"
+                    value={form.amount}
+                    onChangeText={(value) => setForm((current) => ({ ...current, amount: value }))}
+                  />
+                </View>
+
+                <View style={styles.halfInput}>
+                  <Text style={styles.inputLabel}>Categoria</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ex: Moradia, Alimentação"
+                    placeholderTextColor="#94a3b8"
+                    value={form.category}
+                    onChangeText={(value) => setForm((current) => ({ ...current, category: value }))}
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.inputLabel}>Data (AAAA-MM-DD)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="2026-09-11"
+                placeholderTextColor="#94a3b8"
+                value={form.date}
+                onChangeText={(value) => setForm((current) => ({ ...current, date: value }))}
+              />
+
+              <Text style={styles.inputLabel}>Descrição (opcional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Detalhes adicionais..."
+                placeholderTextColor="#94a3b8"
                 value={form.description}
-                onChangeText={(value) =>
-                  setForm((current) => ({ ...current, description: value }))
-                }
+                onChangeText={(value) => setForm((current) => ({ ...current, description: value }))}
               />
 
               <Pressable
@@ -796,239 +970,103 @@ export default function App() {
                 disabled={loading}
               >
                 <Text style={styles.primaryButtonText}>
-                  {loading ? 'Salvando...' : 'Salvar transação'}
+                  {loading ? 'Salvando...' : 'Cadastrar Movimentação'}
                 </Text>
               </Pressable>
             </View>
+          }
+        />
+      )}
 
-            {/* COMPARAÇÃO MENSAL */}
-            <View style={styles.compareCard}>
-              <View style={styles.compareHeader}>
-                <View>
-                  <Text style={styles.cardTitle}>Comparar meses</Text>
-                  <Text style={styles.monthSubtitle}>
-                    {monthLabel(selectedMonth)}
-                  </Text>
-                </View>
-
-                <View style={styles.monthControls}>
-                  <Pressable
-                    style={styles.monthArrow}
-                    onPress={() => changeMonth(-1)}
-                  >
-                    <Text style={styles.monthArrowText}>‹</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.monthArrow}
-                    onPress={() => changeMonth(1)}
-                  >
-                    <Text style={styles.monthArrowText}>›</Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              <View style={styles.compareMonths}>
-                <Text style={styles.compareMonthText}>
-                  {monthLabel(previousMonth)}
-                </Text>
-                <Text style={styles.compareVs}>vs.</Text>
-                <Text style={styles.compareMonthText}>
-                  {monthLabel(selectedMonth)}
-                </Text>
-              </View>
-
-              <View style={styles.compareRow}>
-                <View style={styles.compareItem}>
-                  <Text style={styles.compareLabel}>Receitas</Text>
-                  <Text style={styles.compareValue}>
-                    {formatCurrency(monthlySummary.income)}
-                  </Text>
-                  <Text style={styles.comparePrevious}>
-                    anterior: {formatCurrency(previousMonthlySummary.income)}
-                  </Text>
-                </View>
-
-                <View style={styles.compareItem}>
-                  <Text style={styles.compareLabel}>Despesas</Text>
-                  <Text style={styles.compareValue}>
-                    {formatCurrency(monthlySummary.expense)}
-                  </Text>
-                  <Text style={styles.comparePrevious}>
-                    anterior: {formatCurrency(previousMonthlySummary.expense)}
-                  </Text>
-                  <Text style={styles.variation}>
-                    {expenseVariation === null
-                      ? 'Sem base anterior'
-                      : `${expenseVariation >= 0 ? '↑' : '↓'} ${Math.abs(expenseVariation).toFixed(1)}%`}
-                  </Text>
-                </View>
-
-                <View style={styles.compareItem}>
-                  <Text style={styles.compareLabel}>Saldo</Text>
-                  <Text style={styles.compareValue}>
-                    {formatCurrency(monthlySummary.balance)}
-                  </Text>
-                  <Text style={styles.comparePrevious}>
-                    anterior: {formatCurrency(previousMonthlySummary.balance)}
-                  </Text>
-                  <Text style={styles.variation}>
-                    {balanceVariation === null
-                      ? 'Sem base anterior'
-                      : `${balanceVariation >= 0 ? '↑' : '↓'} ${Math.abs(balanceVariation).toFixed(1)}%`}
-                  </Text>
-                </View>
+      {activeTab === 'admin' && user.role === 'admin' && (
+        <FlatList
+          data={adminData?.users ?? []}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.tabContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <View style={styles.tabHeader}>
+              <Text style={styles.tabHeading}>Painel Administrativo</Text>
+              <Text style={styles.tabSubheading}>Gerencie usuários e visualise dados cadastrados</Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <View style={[styles.adminUserCard, selectedAdminUserId === item.id && styles.adminUserCardSelected]}>
+              <Pressable style={styles.adminUserInfo} onPress={() => setSelectedAdminUserId(item.id)}>
+                <Text style={styles.adminUserName}>{item.name}</Text>
+                <Text style={styles.adminUserEmail}>{item.email}</Text>
+              </Pressable>
+              <View style={styles.adminUserActions}>
+                <Pressable style={styles.adminEditButton} onPress={() => setEditingAdminUser({ ...item, password: '' })}>
+                  <Text style={styles.adminActionText}>Editar</Text>
+                </Pressable>
+                <Pressable style={styles.adminDeleteButton} onPress={() => handleAdminUserDelete(item)}>
+                  <Text style={styles.adminActionText}>Excluir</Text>
+                </Pressable>
               </View>
             </View>
-
-            {/* HISTÓRICO */}
-            <View style={styles.listCard}>
-              <View style={styles.historyHeader}>
-                <View>
-                  <Text style={styles.cardTitle}>Histórico</Text>
-                  <Text style={styles.historySubtitle}>
-                    {transactions.length} transação(ões)
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.fileActions}>
-                <Pressable
-                  style={[styles.fileButton, styles.exportButton]}
-                  onPress={handleExport}
-                  disabled={loading}
-                >
-                  <Text style={styles.fileButtonText}>Exportar Excel</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.fileButton}
-                  onPress={handleImport}
-                  disabled={loading}
-                >
-                  <Text style={styles.fileButtonText}>Importar arquivo</Text>
-                </Pressable>
-              </View>
-
-              {visibleGroups.map(([month, monthTransactions]) => {
-                const expanded = expandedMonths[month] ?? true;
-                const monthTotal = getMonthlySummary(transactions, month);
-
-                return (
-                  <View key={month} style={styles.monthGroup}>
-                    <Pressable
-                      style={styles.monthGroupHeader}
-                      onPress={() =>
-                        setExpandedMonths((current) => ({
-                          ...current,
-                          [month]: !expanded,
-                        }))
-                      }
-                    >
-                      <View>
-                        <Text style={styles.monthGroupTitle}>
-                          {monthLabel(month)}
-                        </Text>
-                        <Text style={styles.monthGroupMeta}>
-                          {monthTransactions.length} movimentação(ões) · Saldo{' '}
-                          {formatCurrency(monthTotal.balance)}
-                        </Text>
-                      </View>
-
-                      <Text style={styles.chevron}>
-                        {expanded ? '⌃' : '⌄'}
-                      </Text>
-                    </Pressable>
-
-                    {expanded &&
-                      monthTransactions.map((item) => (
-                        <View
-                          key={item.id}
-                          style={[
-                            styles.transactionItem,
-                            item.type === 'income'
-                              ? styles.incomeItem
-                              : styles.expenseItem,
-                          ]}
-                        >
-                          <View style={styles.transactionInfo}>
-                            <Text
-                              style={styles.transactionTitle}
-                              numberOfLines={1}
-                            >
-                              {item.title}
-                            </Text>
-
-                            <Text style={styles.transactionMeta}>
-                              {item.category} · {item.date}
-                            </Text>
-
-                            {!!item.description && (
-                              <Text
-                                style={styles.transactionDescription}
-                                numberOfLines={1}
-                              >
-                                {item.description}
-                              </Text>
-                            )}
-                          </View>
-
-                          <View style={styles.transactionRight}>
-                            <Text
-                              style={styles.transactionAmount}
-                              numberOfLines={1}
-                              adjustsFontSizeToFit
-                              minimumFontScale={0.7}
-                            >
-                              {item.type === 'income' ? '+' : '-'}{' '}
-                              {formatCurrency(item.amount)}
-                            </Text>
-
-                            <View style={styles.actionRow}>
-                              <Pressable
-                                style={styles.editButton}
-                                onPress={() => handleEditStart(item)}
-                              >
-                                <Text style={styles.actionText}>✏️</Text>
-                              </Pressable>
-
-                              <Pressable
-                                style={styles.deleteButton}
-                                onPress={() => handleDeleteTransaction(item)}
-                              >
-                                <Text style={styles.actionText}>🗑️</Text>
-                              </Pressable>
-                            </View>
-                          </View>
-                        </View>
-                      ))}
+          )}
+          ListFooterComponent={
+            <View style={styles.adminTransactionsCard}>
+              <Text style={styles.cardTitle}>{selectedUser ? `Transações de ${selectedUser.name}` : 'Transações do Usuário'}</Text>
+              {!selectedUser ? (
+                <Text style={styles.emptyStateText}>Selecione um usuário acima para visualizar suas movimentações.</Text>
+              ) : selectedTransactions.length === 0 ? (
+                <Text style={styles.emptyStateText}>Este usuário não possui transações.</Text>
+              ) : (
+                selectedTransactions.map((item) => (
+                  <View key={item.id} style={styles.recentItem}>
+                    <View style={styles.recentInfo}>
+                      <Text style={styles.recentTitle}>{item.title}</Text>
+                      <Text style={styles.recentMeta}>{item.category} · {item.date}</Text>
+                    </View>
+                    <Text style={[styles.recentAmount, item.type === 'income' ? styles.recentAmountIncome : styles.recentAmountExpense]}>
+                      {item.type === 'income' ? '+' : '-'} {formatCurrency(item.amount)}
+                    </Text>
                   </View>
-                );
-              })}
-
-              {groupedTransactions.length === 0 && (
-                <Text style={styles.emptyText}>
-                  Nenhuma movimentação registrada.
-                </Text>
-              )}
-
-              {!historyExpanded && groupedTransactions.length > 2 && (
-                <Pressable
-                  style={styles.showMoreButton}
-                  onPress={() => setHistoryExpanded(true)}
-                >
-                  <Text style={styles.showMoreText}>
-                    Mostrar todos os meses
-                  </Text>
-                </Pressable>
+                ))
               )}
             </View>
-          </>
-        }
-        renderItem={null}
-        keyExtractor={() => 'dashboard'}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
-      />
+          }
+        />
+      )}
+
+      {/* BARRA DE NAVEGAÇÃO INFERIOR (BOTTOM TABS) */}
+      <View style={styles.bottomBar}>
+        <Pressable
+          style={[styles.bottomTab, activeTab === 'dashboard' && styles.bottomTabActive]}
+          onPress={() => setActiveTab('dashboard')}
+        >
+          <Text style={styles.bottomTabIcon}>🏠</Text>
+          <Text style={[styles.bottomTabLabel, activeTab === 'dashboard' && styles.bottomTabLabelActive]}>Início</Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.bottomTab, activeTab === 'history' && styles.bottomTabActive]}
+          onPress={() => setActiveTab('history')}
+        >
+          <Text style={styles.bottomTabIcon}>📊</Text>
+          <Text style={[styles.bottomTabLabel, activeTab === 'history' && styles.bottomTabLabelActive]}>Extrato</Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.bottomTab, activeTab === 'new' && styles.bottomTabActive]}
+          onPress={() => setActiveTab('new')}
+        >
+          <Text style={styles.bottomTabIcon}>➕</Text>
+          <Text style={[styles.bottomTabLabel, activeTab === 'new' && styles.bottomTabLabelActive]}>Novo</Text>
+        </Pressable>
+
+        {user.role === 'admin' && (
+          <Pressable
+            style={[styles.bottomTab, activeTab === 'admin' && styles.bottomTabActive]}
+            onPress={() => setActiveTab('admin')}
+          >
+            <Text style={styles.bottomTabIcon}>⚙️</Text>
+            <Text style={[styles.bottomTabLabel, activeTab === 'admin' && styles.bottomTabLabelActive]}>Admin</Text>
+          </Pressable>
+        )}
+      </View>
 
       {/* MODAL DE EDIÇÃO */}
       <Modal
@@ -1044,95 +1082,105 @@ export default function App() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Editar transação</Text>
 
+            <Text style={styles.inputLabel}>Título</Text>
             <TextInput
               style={styles.input}
               placeholder="Título"
+              placeholderTextColor="#94a3b8"
               value={editForm.title}
-              onChangeText={(value) =>
-                setEditForm((current) => ({ ...current, title: value }))
-              }
+              onChangeText={(value) => setEditForm((current) => ({ ...current, title: value }))}
             />
 
             <View style={styles.rowTwo}>
-              <TextInput
-                style={[styles.input, styles.halfInput]}
-                placeholder="Valor"
-                keyboardType="decimal-pad"
-                value={editForm.amount}
-                onChangeText={(value) =>
-                  setEditForm((current) => ({ ...current, amount: value }))
-                }
-              />
+              <View style={styles.halfInput}>
+                <Text style={styles.inputLabel}>Valor</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Valor"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="decimal-pad"
+                  value={editForm.amount}
+                  onChangeText={(value) => setEditForm((current) => ({ ...current, amount: value }))}
+                />
+              </View>
 
-              <TextInput
-                style={[styles.input, styles.halfInput]}
-                placeholder="Categoria"
-                value={editForm.category}
-                onChangeText={(value) =>
-                  setEditForm((current) => ({ ...current, category: value }))
-                }
-              />
+              <View style={styles.halfInput}>
+                <Text style={styles.inputLabel}>Categoria</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Categoria"
+                  placeholderTextColor="#94a3b8"
+                  value={editForm.category}
+                  onChangeText={(value) => setEditForm((current) => ({ ...current, category: value }))}
+                />
+              </View>
             </View>
 
             <View style={styles.rowTwo}>
-              <TextInput
-                style={[styles.input, styles.halfInput]}
-                placeholder="Data"
-                value={editForm.date}
-                onChangeText={(value) =>
-                  setEditForm((current) => ({ ...current, date: value }))
-                }
-              />
+              <View style={styles.halfInput}>
+                <Text style={styles.inputLabel}>Data</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Data"
+                  placeholderTextColor="#94a3b8"
+                  value={editForm.date}
+                  onChangeText={(value) => setEditForm((current) => ({ ...current, date: value }))}
+                />
+              </View>
 
-              <Pressable
-                style={[
-                  styles.typeButton,
-                  editForm.type === 'income' && styles.typeButtonIncome,
-                ]}
-                onPress={() =>
-                  setEditForm((current) => ({
-                    ...current,
-                    type: current.type === 'income' ? 'expense' : 'income',
-                  }))
-                }
-              >
-                <Text style={styles.typeButtonText}>
-                  {editForm.type === 'income' ? 'Receita' : 'Despesa'}
-                </Text>
-              </Pressable>
+              <View style={styles.halfInput}>
+                <Text style={styles.inputLabel}>Tipo</Text>
+                <Pressable
+                  style={[styles.typeButton, editForm.type === 'income' ? styles.typeButtonIncome : styles.typeButtonExpense]}
+                  onPress={() => setEditForm((current) => ({ ...current, type: current.type === 'income' ? 'expense' : 'income' }))}
+                >
+                  <Text style={[styles.typeButtonText, editForm.type === 'income' ? styles.typeButtonTextIncome : styles.typeButtonTextExpense]}>
+                    {editForm.type === 'income' ? '↓ Receita' : '↑ Despesa'}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
 
+            <Text style={styles.inputLabel}>Descrição</Text>
             <TextInput
               style={styles.input}
               placeholder="Descrição"
+              placeholderTextColor="#94a3b8"
               value={editForm.description}
-              onChangeText={(value) =>
-                setEditForm((current) => ({ ...current, description: value }))
-              }
+              onChangeText={(value) => setEditForm((current) => ({ ...current, description: value }))}
             />
 
-            <Pressable
-              style={styles.primaryButton}
-              onPress={handleEditTransaction}
-              disabled={loading}
-            >
-              <Text style={styles.primaryButtonText}>
-                {loading ? 'Salvando...' : 'Salvar alterações'}
-              </Text>
+            <Pressable style={styles.primaryButton} onPress={handleEditTransaction} disabled={loading}>
+              <Text style={styles.primaryButtonText}>{loading ? 'Salvando...' : 'Salvar alterações'}</Text>
             </Pressable>
 
-            <Pressable
-              style={styles.cancelButton}
-              onPress={() => setEditingTransaction(null)}
-              disabled={loading}
-            >
+            <Pressable style={styles.cancelButton} onPress={() => setEditingTransaction(null)} disabled={loading}>
               <Text style={styles.cancelButtonText}>Cancelar</Text>
             </Pressable>
           </View>
         </KeyboardAvoidingView>
       </Modal>
 
-      <StatusBar style="auto" />
+      {/* MODAL DE EDIÇÃO ADMIN */}
+      <Modal visible={editingAdminUser !== null} transparent animationType="slide" onRequestClose={() => setEditingAdminUser(null)}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Editar usuário</Text>
+            <Text style={styles.inputLabel}>E-mail</Text>
+            <TextInput style={styles.input} placeholder="E-mail" placeholderTextColor="#94a3b8" autoCapitalize="none" keyboardType="email-address" value={editingAdminUser?.email ?? ''} onChangeText={(value) => setEditingAdminUser((current) => current && { ...current, email: value })} />
+            <Text style={styles.inputLabel}>Nova senha (opcional)</Text>
+            <TextInput style={styles.input} placeholder="Nova senha" placeholderTextColor="#94a3b8" secureTextEntry value={editingAdminUser?.password ?? ''} onChangeText={(value) => setEditingAdminUser((current) => current && { ...current, password: value })} />
+            <Pressable style={styles.primaryButton} onPress={handleAdminUserUpdate} disabled={loading}>
+              <Text style={styles.primaryButtonText}>Salvar</Text>
+            </Pressable>
+            <Pressable style={styles.cancelButton} onPress={() => setEditingAdminUser(null)}>
+              <Text style={styles.cancelButtonText}>Cancelar</Text>
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <StatusBar style="dark" />
     </View>
   );
 }
@@ -1140,356 +1188,289 @@ export default function App() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#eef4ff',
+    backgroundColor: '#f8fafc',
   },
 
-  content: {
-    padding: 20,
-    paddingTop: 52,
-    paddingBottom: 40,
-    gap: 16,
-  },
-
-  authScreen: {
-    flex: 1,
-    backgroundColor: '#eef4ff',
-    justifyContent: 'center',
-    padding: 20,
-  },
-
-  authCard: {
+  topHeader: {
+    paddingTop: 48,
+    paddingHorizontal: 20,
+    paddingBottom: 14,
     backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 24,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  topHeaderLeft: {
+    flex: 1,
   },
 
   eyebrow: {
-    fontSize: 12,
-    letterSpacing: 1.2,
-    color: '#4f46e5',
-    fontWeight: '700',
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: '#2563eb',
+    fontWeight: '800',
     textTransform: 'uppercase',
   },
 
-  title: {
-    fontSize: 28,
+  welcomeTitle: {
+    fontSize: 20,
     fontWeight: '800',
     color: '#0f172a',
-    marginTop: 8,
-    marginBottom: 18,
+    marginTop: 2,
   },
 
-  switchRow: {
-    flexDirection: 'row',
-    backgroundColor: '#e2e8f0',
+  logoutButton: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 10,
-    padding: 4,
-    marginBottom: 16,
-  },
-
-  switchButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-
-  switchButtonActive: {
-    backgroundColor: '#ffffff',
-  },
-
-  switchText: {
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-
-  input: {
     borderWidth: 1,
-    borderColor: '#dbe3f0',
-    backgroundColor: '#f8fafc',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 12,
+    borderColor: '#e2e8f0',
+  },
+
+  logoutButtonText: {
+    color: '#475569',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+
+  tabContent: {
+    padding: 16,
+    paddingBottom: 96,
+    gap: 14,
+  },
+
+  tabHeader: {
+    marginBottom: 6,
+  },
+
+  tabHeading: {
+    fontSize: 22,
+    fontWeight: '800',
     color: '#0f172a',
   },
 
-  primaryButton: {
-    backgroundColor: '#2563eb',
-    paddingVertical: 13,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 8,
+  tabSubheading: {
+    fontSize: 13,
+    color: '#64748b',
+    marginTop: 2,
   },
 
-  primaryButtonText: {
-    color: '#ffffff',
+  mainBalanceCard: {
+    backgroundColor: '#0f172a',
+    borderRadius: 20,
+    padding: 22,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+
+  mainBalanceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+
+  mainBalanceLabel: {
+    color: '#94a3b8',
+    fontSize: 13,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  statusPill: {
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+
+  statusPillText: {
+    color: '#38bdf8',
+    fontSize: 11,
     fontWeight: '700',
-    fontSize: 15,
   },
 
-  textButton: {
+  mainBalanceValue: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#ffffff',
+    letterSpacing: -0.5,
+  },
+
+  mainBalanceDivider: {
+    height: 1,
+    backgroundColor: '#1e293b',
+    marginVertical: 16,
+  },
+
+  mainBalanceStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+
+  miniStat: {
+    flex: 1,
+  },
+
+  miniStatSeparator: {
+    width: 1,
+    backgroundColor: '#1e293b',
+    marginHorizontal: 16,
+  },
+
+  miniStatLabel: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+
+  miniStatIncome: {
+    color: '#4ade80',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+
+  miniStatExpense: {
+    color: '#f87171',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+
+  quickAddBanner: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    gap: 12,
   },
 
-  textButtonLabel: {
+  quickAddIconWrapper: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#dbeafe',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  quickAddIcon: {
+    fontSize: 18,
+  },
+
+  quickAddText: {
+    flex: 1,
+  },
+
+  quickAddTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1e40af',
+  },
+
+  quickAddSubtitle: {
+    fontSize: 12,
+    color: '#3b82f6',
+    marginTop: 2,
+  },
+
+  quickAddArrow: {
+    fontSize: 22,
     color: '#2563eb',
     fontWeight: '700',
   },
 
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-
-  adminHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 18,
-  },
-
-  adminUserCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  cleanCard: {
     backgroundColor: '#ffffff',
-    borderColor: '#dbe3f0',
-    borderRadius: 10,
+    borderRadius: 18,
     borderWidth: 1,
-    marginBottom: 10,
-    padding: 12,
+    borderColor: '#e2e8f0',
+    padding: 18,
+    shadowColor: '#64748b',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
 
-  adminUserCardSelected: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#2563eb',
-  },
-
-  adminUserInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-
-  adminUserActions: {
+  cardHeaderRow: {
     flexDirection: 'row',
-    gap: 6,
-    marginLeft: 8,
-  },
-
-  adminEditButton: {
-    backgroundColor: '#f59e0b',
-    borderRadius: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
-  },
-
-  adminDeleteButton: {
-    backgroundColor: '#ef4444',
-    borderRadius: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
-  },
-
-  adminActionText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
-  adminTransactions: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    marginTop: 10,
-    padding: 16,
-  },
-
-  headerText: {
-    flex: 1,
-    minWidth: 0,
-    marginRight: 12,
-  },
-
-  pageTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#0f172a',
-    marginTop: 4,
-  },
-
-  pageTitleCompact: {
-    fontSize: 28,
-  },
-
-  userLabel: {
-    color: '#475569',
-    marginTop: 4,
-    fontSize: 15,
-  },
-
-  logoutButton: {
-    backgroundColor: '#0f172a',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-
-  logoutButtonText: {
-    color: '#ffffff',
-    fontWeight: '700',
-  },
-
-  summaryRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-
-  summaryCard: {
-    flex: 1,
-    minWidth: 0,
-    borderRadius: 14,
-    padding: 14,
-  },
-
-  incomeCard: {
-    backgroundColor: '#dcfce7',
-  },
-
-  expenseCard: {
-    backgroundColor: '#fee2e2',
-  },
-
-  balanceCard: {
-    backgroundColor: '#dbeafe',
-  },
-
-  summaryLabel: {
-    color: '#334155',
-    fontSize: 12,
-    marginBottom: 4,
-  },
-
-  summaryValue: {
-    color: '#0f172a',
-    fontSize: 17,
-    fontWeight: '800',
-  },
-
-  summaryValueCompact: {
-    fontSize: 15,
-  },
-
-  formCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-  },
-
-  compareCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-  },
-
-  listCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
 
   cardTitle: {
-    fontSize: 21,
+    fontSize: 18,
     fontWeight: '800',
     color: '#0f172a',
-    marginBottom: 4,
   },
 
-  rowTwo: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-
-  halfInput: {
-    flex: 1,
-    minWidth: 0,
-  },
-
-  typeButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#dbe3f0',
-    backgroundColor: '#fef2f2',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  typeButtonIncome: {
-    backgroundColor: '#ecfdf5',
-  },
-
-  typeButtonText: {
-    color: '#0f172a',
-    fontWeight: '700',
-  },
-
-  compareHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-
-  monthSubtitle: {
+  cardSubtitle: {
+    fontSize: 12,
     color: '#64748b',
     textTransform: 'capitalize',
+    marginTop: 2,
+  },
+
+  viewAllLink: {
+    color: '#2563eb',
     fontSize: 13,
+    fontWeight: '700',
   },
 
   monthControls: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
 
   monthArrow: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#e2e8f0',
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
 
   monthArrowText: {
-    fontSize: 25,
+    fontSize: 18,
     color: '#0f172a',
-    lineHeight: 28,
+    fontWeight: '700',
+    lineHeight: 20,
   },
 
-  compareMonths: {
+  compareMonthsTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 12,
+    gap: 6,
     marginBottom: 12,
   },
 
   compareMonthText: {
-    color: '#475569',
     fontSize: 12,
+    color: '#64748b',
     textTransform: 'capitalize',
   },
 
+  compareMonthActive: {
+    color: '#2563eb',
+    fontWeight: '700',
+  },
+
   compareVs: {
-    color: '#94a3b8',
+    color: '#cbd5e1',
     fontWeight: '700',
   },
 
@@ -1500,21 +1481,23 @@ const styles = StyleSheet.create({
 
   compareItem: {
     flex: 1,
-    minWidth: 0,
     backgroundColor: '#f8fafc',
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 10,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
   },
 
   compareLabel: {
     color: '#64748b',
     fontSize: 11,
+    fontWeight: '600',
     marginBottom: 4,
   },
 
   compareValue: {
     color: '#0f172a',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
   },
 
@@ -1525,229 +1508,582 @@ const styles = StyleSheet.create({
   },
 
   variation: {
-    color: '#2563eb',
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '800',
     marginTop: 4,
   },
 
-  historyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+  variationGreen: {
+    color: '#16a34a',
   },
 
-  fileActions: {
+  variationRed: {
+    color: '#dc2626',
+  },
+
+  recentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    gap: 12,
+  },
+
+  typePillIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  typePillIncome: {
+    backgroundColor: '#ecfdf5',
+  },
+
+  typePillExpense: {
+    backgroundColor: '#fef2f2',
+  },
+
+  typePillText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+
+  recentInfo: {
+    flex: 1,
+  },
+
+  recentTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+
+  recentMeta: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+  },
+
+  recentAmount: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  recentAmountIncome: {
+    color: '#16a34a',
+  },
+
+  recentAmountExpense: {
+    color: '#dc2626',
+  },
+
+  emptyStateText: {
+    color: '#94a3b8',
+    fontSize: 13,
+    paddingVertical: 14,
+    textAlign: 'center',
+  },
+
+  actionButtonsRow: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 14,
+    marginBottom: 6,
   },
 
-  fileButton: {
+  fileActionBtn: {
     flex: 1,
-    minWidth: 0,
+    borderRadius: 12,
+    paddingVertical: 12,
     alignItems: 'center',
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    justifyContent: 'center',
   },
 
-  exportButton: {
-    backgroundColor: '#475569',
+  exportBtn: {
+    backgroundColor: '#0f172a',
   },
 
-  fileButtonText: {
+  importBtn: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+
+  fileActionBtnText: {
     color: '#ffffff',
     fontSize: 13,
     fontWeight: '700',
   },
 
-  historySubtitle: {
-    color: '#64748b',
-    fontSize: 12,
-  },
-
-  expandButton: {
-    backgroundColor: '#e8eefc',
-    borderRadius: 9,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-  },
-
-  expandButtonText: {
+  importBtnText: {
     color: '#2563eb',
-    fontSize: 12,
-    fontWeight: '700',
   },
 
-  monthGroup: {
-    marginBottom: 12,
+  emptyCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 32,
+    alignItems: 'center',
+  },
+
+  emptyCardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+
+  emptyCardSubtitle: {
+    fontSize: 13,
+    color: '#64748b',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+
+  monthGroupCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    overflow: 'hidden',
   },
 
   monthGroupHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 11,
-    padding: 12,
-    marginBottom: 8,
+    backgroundColor: '#f8fafc',
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
   },
 
   monthGroupTitle: {
-    color: '#0f172a',
+    fontSize: 15,
     fontWeight: '800',
-    fontSize: 14,
+    color: '#0f172a',
     textTransform: 'capitalize',
   },
 
   monthGroupMeta: {
+    fontSize: 11,
     color: '#64748b',
-    fontSize: 10,
-    marginTop: 3,
+    marginTop: 2,
   },
 
   chevron: {
-    color: '#475569',
     fontSize: 18,
+    color: '#94a3b8',
+    fontWeight: '700',
+  },
+
+  transactionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f8fafc',
+    gap: 12,
+  },
+
+  transactionRowInfo: {
+    flex: 1,
+  },
+
+  transactionRowTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+
+  transactionRowMeta: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+  },
+
+  transactionRowDesc: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+
+  transactionRowRight: {
+    alignItems: 'flex-end',
+  },
+
+  transactionRowAmount: {
+    fontSize: 14,
     fontWeight: '800',
   },
 
-  transactionItem: {
+  rowActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 8,
+    gap: 6,
+    marginTop: 6,
   },
 
-  incomeItem: {
-    backgroundColor: '#ecfdf5',
+  iconButton: {
+    backgroundColor: '#f1f5f9',
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
-  expenseItem: {
+  iconButtonDanger: {
     backgroundColor: '#fef2f2',
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
-  transactionInfo: {
+  iconButtonText: {
+    fontSize: 13,
+  },
+
+  typeSelectorRow: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+    gap: 6,
+  },
+
+  typeOption: {
     flex: 1,
-    minWidth: 0,
-    marginRight: 10,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
   },
 
-  transactionTitle: {
+  typeOptionIncomeActive: {
+    backgroundColor: '#10b981',
+  },
+
+  typeOptionExpenseActive: {
+    backgroundColor: '#ef4444',
+  },
+
+  typeOptionText: {
+    fontSize: 14,
     fontWeight: '700',
+    color: '#64748b',
+  },
+
+  typeOptionTextActive: {
+    color: '#ffffff',
+  },
+
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 6,
+    marginTop: 8,
+  },
+
+  input: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 14,
     color: '#0f172a',
   },
 
-  transactionMeta: {
-    fontSize: 12,
-    color: '#475569',
-    marginTop: 4,
+  rowTwo: {
+    flexDirection: 'row',
+    gap: 10,
   },
 
-  transactionDescription: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 4,
+  halfInput: {
+    flex: 1,
   },
 
-  transactionRight: {
-    alignItems: 'flex-end',
-    width: 118,
+  typeButton: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
-  transactionAmount: {
-    width: '100%',
-    textAlign: 'right',
-    fontWeight: '800',
-    color: '#0f172a',
+  typeButtonIncome: {
+    backgroundColor: '#ecfdf5',
+    borderColor: '#a7f3d0',
+  },
+
+  typeButtonExpense: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+  },
+
+  typeButtonText: {
+    fontWeight: '700',
     fontSize: 13,
   },
 
-  actionRow: {
-    flexDirection: 'row',
-    gap: 8,
+  typeButtonTextIncome: {
+    color: '#16a34a',
+  },
+
+  typeButtonTextExpense: {
+    color: '#dc2626',
+  },
+
+  primaryButton: {
+    backgroundColor: '#2563eb',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 18,
+    shadowColor: '#2563eb',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+
+  primaryButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  cancelButton: {
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
     marginTop: 8,
   },
 
-  editButton: {
-    backgroundColor: '#dbeafe',
-    borderRadius: 8,
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  deleteButton: {
-    backgroundColor: '#fee2e2',
-    borderRadius: 8,
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  actionText: {
-    fontSize: 16,
-  },
-
-  showMoreButton: {
-    backgroundColor: '#eef2ff',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-
-  showMoreText: {
-    color: '#2563eb',
+  cancelButtonText: {
+    color: '#475569',
+    fontSize: 14,
     fontWeight: '700',
   },
 
-  emptyText: {
+  adminUserCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+  },
+
+  adminUserCardSelected: {
+    borderColor: '#2563eb',
+    backgroundColor: '#eff6ff',
+  },
+
+  adminUserInfo: {
+    flex: 1,
+  },
+
+  adminUserName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+
+  adminUserEmail: {
+    fontSize: 12,
     color: '#64748b',
+    marginTop: 2,
+  },
+
+  adminUserActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+
+  adminEditButton: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+
+  adminDeleteButton: {
+    backgroundColor: '#fef2f2',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+
+  adminActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+
+  adminTransactionsCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 16,
+    marginTop: 10,
+  },
+
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 68,
+    backgroundColor: '#ffffff',
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingBottom: Platform.OS === 'ios' ? 14 : 4,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+
+  bottomTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+
+  bottomTabActive: {
+    transform: [{ scale: 1.05 }],
+  },
+
+  bottomTabIcon: {
+    fontSize: 20,
+  },
+
+  bottomTabLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+
+  bottomTabLabelActive: {
+    color: '#2563eb',
+    fontWeight: '800',
+  },
+
+  authScreen: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    justifyContent: 'center',
+    padding: 20,
+  },
+
+  authCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 28,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#64748b',
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+
+  authFieldsContainer: {
+    gap: 12,
+  },
+
+  title: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginTop: 6,
+    marginBottom: 20,
+  },
+
+  switchRow: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+  },
+
+  switchButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+
+  switchButtonActive: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#64748b',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+
+  switchText: {
+    fontWeight: '600',
+    color: '#64748b',
+    fontSize: 14,
+  },
+
+  switchTextActive: {
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+
+  textButton: {
+    alignItems: 'center',
     paddingVertical: 12,
+    marginTop: 4,
+  },
+
+  textButtonLabel: {
+    color: '#2563eb',
+    fontWeight: '700',
+    fontSize: 14,
   },
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
     justifyContent: 'center',
     padding: 20,
   },
 
   modalCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 24,
+    padding: 22,
     shadowColor: '#000',
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.15,
     shadowRadius: 20,
-    elevation: 10,
+    elevation: 8,
   },
 
   modalTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '800',
     color: '#0f172a',
-    marginBottom: 18,
-  },
-
-  cancelButton: {
-    backgroundColor: '#e2e8f0',
-    paddingVertical: 13,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-
-  cancelButtonText: {
-    color: '#0f172a',
-    fontWeight: '700',
+    marginBottom: 12,
   },
 });

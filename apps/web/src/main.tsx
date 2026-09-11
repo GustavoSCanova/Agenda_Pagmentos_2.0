@@ -22,6 +22,7 @@ const emptyAuth = {
 type SessionUser = { id: string; name: string; email: string; role?: 'admin' };
 
 function App() {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'new' | 'admin'>('dashboard');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<Summary>({ income: 0, expense: 0, balance: 0 });
   const [form, setForm] = useState(emptyForm);
@@ -30,7 +31,6 @@ function App() {
   const [authData, setAuthData] = useState(emptyAuth);
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<SessionUser | null>(null);
-  const [adminView, setAdminView] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<{ title: string; amount: number; type: 'income' | 'expense'; category: string; date: string; description?: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -138,7 +138,7 @@ function App() {
     saveToken(result.token);
     setUser(result.user);
     setToken(result.token);
-    setAdminView(result.user.role === 'admin');
+    setActiveTab(result.user.role === 'admin' ? 'admin' : 'dashboard');
     setAuthData(emptyAuth);
     void loadData(result.token);
     void loadAdminData(result.token);
@@ -233,6 +233,7 @@ function App() {
       setForm(emptyForm);
       void loadData(token);
       void loadAdminData(token);
+      setActiveTab('dashboard');
     }
   };
 
@@ -390,7 +391,7 @@ function App() {
     setUser(null);
     setTransactions([]);
     setSummary({ income: 0, expense: 0, balance: 0 });
-    setAdminView(false);
+    setActiveTab('dashboard');
     setAdminData(null);
   };
 
@@ -424,7 +425,6 @@ function App() {
             </>
           )}
         </div>
-
       </main>
     );
   }
@@ -434,19 +434,237 @@ function App() {
       <header className="topbar">
         <div>
           <p className="eyebrow">Agenda de Pagamentos 2.0</p>
-          <h1>{adminView ? 'Painel administrativo' : 'Dashboard financeiro'}</h1>
-          <p className="user-label">Olá, {user.name}</p>
+          <h1>Olá, {user.name}</h1>
         </div>
         <div className="header-actions">
-          {user.role === 'admin' && <button type="button" className="secondary-button" onClick={() => setAdminView((value) => !value)}>{adminView ? 'Voltar' : 'Admin'}</button>}
           <button type="button" className="logout-button" onClick={logout}>Sair</button>
         </div>
       </header>
 
-      {adminView ? (
+      {/* NAVEGAÇÃO POR ABAS WEB */}
+      <nav className="web-tabs">
+        <button
+          type="button"
+          className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
+          onClick={() => setActiveTab('dashboard')}
+        >
+          🏠 Início
+        </button>
+        <button
+          type="button"
+          className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
+          onClick={() => setActiveTab('history')}
+        >
+          📊 Extrato
+        </button>
+        <button
+          type="button"
+          className={`tab-btn ${activeTab === 'new' ? 'active' : ''}`}
+          onClick={() => setActiveTab('new')}
+        >
+          ➕ Nova Movimentação
+        </button>
+        {user.role === 'admin' && (
+          <button
+            type="button"
+            className={`tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
+            onClick={() => setActiveTab('admin')}
+          >
+            ⚙️ Administração
+          </button>
+        )}
+      </nav>
+
+      {/* CONTEÚDO DA ABA DASHBOARD */}
+      {activeTab === 'dashboard' && (
+        <section className="dashboard-view">
+          <div className="main-balance-card-web">
+            <div className="balance-info-web">
+              <span className="balance-tag-web">Saldo Total Disponível</span>
+              <h2>R$ {summary.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h2>
+            </div>
+            <div className="balance-quick-stats">
+              <div className="quick-stat-box income-box">
+                <span>↓ Receitas</span>
+                <strong>R$ {summary.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+              </div>
+              <div className="quick-stat-box expense-box">
+                <span>↑ Despesas</span>
+                <strong>R$ {summary.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="dashboard-grid">
+            <div className="card dashboard-action-card">
+              <h3>Ações Rápidas</h3>
+              <p>Gerencie suas finanças com agilidade</p>
+              <div className="action-button-group">
+                <button type="button" className="action-cta-btn" onClick={() => setActiveTab('new')}>
+                  ➕ Cadastrar Nova Movimentação
+                </button>
+                <button type="button" className="secondary-button" onClick={() => setActiveTab('history')}>
+                  📊 Ver Extrato Completo
+                </button>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="list-header">
+                <h3>Últimas Movimentações</h3>
+                <button type="button" className="link-btn" onClick={() => setActiveTab('history')}>
+                  Ver tudo →
+                </button>
+              </div>
+              {transactions.length === 0 ? (
+                <p className="empty-text">Nenhuma transação cadastrada ainda.</p>
+              ) : (
+                <ul className="transaction-list">
+                  {transactions.slice(0, 4).map((transaction) => (
+                    <li key={transaction.id} className={transaction.type === 'income' ? 'income-item' : 'expense-item'}>
+                      <div className="transaction-item-content">
+                        <div>
+                          <strong>{transaction.title}</strong>
+                          <small>{transaction.category} · {transaction.date}</small>
+                        </div>
+                        <span className="transaction-amount">
+                          {transaction.type === 'income' ? '+' : '-'}R${' '}
+                          {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* CONTEÚDO DA ABA EXTRATO */}
+      {activeTab === 'history' && (
+        <section className="history-view">
+          <div className="card list-card">
+            <div className="list-header">
+              <div>
+                <h2>Extrato de Movimentações</h2>
+                <p className="subtitle-text">{transactions.length} transação(ões) encontradas</p>
+              </div>
+              <div className="data-actions">
+                <button type="button" className="secondary-button" onClick={() => void handleExport()}>
+                  📥 Exportar Excel
+                </button>
+                <label className="import-button">
+                  {importing ? 'Importando...' : '📤 Importar Planilha'}
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={(event) => void handleImport(event)}
+                    disabled={importing}
+                  />
+                </label>
+              </div>
+            </div>
+
+            {transactions.length === 0 ? (
+              <p className="empty-text">Nenhuma movimentação registrada.</p>
+            ) : (
+              <ul className="transaction-list">
+                {transactions.map((transaction) => (
+                  <li key={transaction.id} className={transaction.type === 'income' ? 'income-item' : 'expense-item'}>
+                    <div className="transaction-item-content">
+                      <div>
+                        <strong>{transaction.title}</strong>
+                        <small>
+                          {transaction.category} · {transaction.date}
+                          {transaction.description && ` · ${transaction.description}`}
+                        </small>
+                      </div>
+                      <span className="transaction-amount">
+                        {transaction.type === 'income' ? '+' : '-'}R${' '}
+                        {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="transaction-actions">
+                      <button
+                        type="button"
+                        className="action-button edit-action"
+                        onClick={() => handleEditStart(transaction)}
+                        title="Editar transação"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        type="button"
+                        className="action-button delete-action"
+                        onClick={() => setDeleteConfirm(transaction.id)}
+                        title="Deletar transação"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* CONTEÚDO DA ABA NOVA TRANSAÇÃO */}
+      {activeTab === 'new' && (
+        <section className="new-view">
+          <form className="card form-card centered-form-card" onSubmit={handleSubmit}>
+            <h2>Nova Movimentação</h2>
+            <p className="subtitle-text">Cadastre uma nova receita ou despesa</p>
+
+            <label>
+              Título da transação
+              <input name="title" value={form.title} onChange={handleChange} placeholder="Ex: Salário, Aluguel" required />
+            </label>
+
+            <div className="inline-fields">
+              <label>
+                Valor (R$)
+                <input name="amount" type="number" min="0" step="0.01" value={form.amount} onChange={handleChange} placeholder="0,00" required />
+              </label>
+
+              <label>
+                Tipo de movimentação
+                <select name="type" value={form.type} onChange={handleChange}>
+                  <option value="expense">↑ Despesa</option>
+                  <option value="income">↓ Receita</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="inline-fields">
+              <label>
+                Categoria
+                <input name="category" value={form.category} onChange={handleChange} placeholder="Ex: Alimentação, Moradia" required />
+              </label>
+
+              <label>
+                Data
+                <input name="date" type="date" value={form.date} onChange={handleChange} required />
+              </label>
+            </div>
+
+            <label>
+              Descrição (opcional)
+              <input name="description" value={form.description} onChange={handleChange} placeholder="Observações adicionais..." />
+            </label>
+
+            <button type="submit" className="primary-button-full">Cadastrar Movimentação</button>
+          </form>
+        </section>
+      )}
+
+      {/* CONTEÚDO DA ABA ADMIN */}
+      {activeTab === 'admin' && user.role === 'admin' && (
         <section className="admin-panel">
           <div className="card admin-card">
-            <h2>Usuários</h2>
+            <h2>Usuários Cadastrados</h2>
             <ul className="admin-list">
               {(adminData?.users ?? []).map((item) => (
                 <li key={item.id} className={selectedAdminUserId === item.id ? 'selected-admin-user' : ''}>
@@ -485,124 +703,6 @@ function App() {
             {!selectedAdminUserId && <p className="empty-admin-state">Clique em um usuário para consultar seus dados.</p>}
           </div>
         </section>
-      ) : (
-        <>
-          <section className="summary-grid">
-        <article className="card income">
-          <span>Receitas</span>
-          <strong>R$ {summary.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
-        </article>
-        <article className="card expense">
-          <span>Despesas</span>
-          <strong>R$ {summary.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
-        </article>
-        <article className="card balance">
-          <span>Saldo</span>
-          <strong>R$ {summary.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
-        </article>
-      </section>
-
-      <section className="content-grid">
-        <form className="card form-card" onSubmit={handleSubmit}>
-          <h2>Nova transação</h2>
-
-          <label>
-            Título
-            <input name="title" value={form.title} onChange={handleChange} placeholder="Ex: Salário" required />
-          </label>
-
-          <div className="inline-fields">
-            <label>
-              Valor
-              <input name="amount" type="number" min="0" step="0.01" value={form.amount} onChange={handleChange} required />
-            </label>
-
-            <label>
-              Tipo
-              <select name="type" value={form.type} onChange={handleChange}>
-                <option value="expense">Despesa</option>
-                <option value="income">Receita</option>
-              </select>
-            </label>
-          </div>
-
-          <label>
-            Categoria
-            <input name="category" value={form.category} onChange={handleChange} placeholder="Ex: Alimentação" required />
-          </label>
-
-          <div className="inline-fields">
-            <label>
-              Data
-              <input name="date" type="date" value={form.date} onChange={handleChange} required />
-            </label>
-          </div>
-
-          <label>
-            Descrição
-            <input name="description" value={form.description} onChange={handleChange} placeholder="Opcional" />
-          </label>
-
-          <button type="submit">Salvar transação</button>
-        </form>
-
-        <div className="card list-card">
-          <div className="list-header">
-            <h2>Histórico</h2>
-            <div className="data-actions">
-              <button type="button" className="secondary-button" onClick={() => void handleExport()}>
-                Exportar Excel
-              </button>
-              <label className="import-button">
-                {importing ? 'Importando...' : 'Importar arquivo'}
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={(event) => void handleImport(event)}
-                  disabled={importing}
-                />
-              </label>
-            </div>
-          </div>
-          <ul className="transaction-list">
-            {transactions.map((transaction) => (
-              <li key={transaction.id} className={transaction.type === 'income' ? 'income-item' : 'expense-item'}>
-                <div className="transaction-item-content">
-                  <div>
-                    <strong>{transaction.title}</strong>
-                    <small>
-                      {transaction.category} · {transaction.date}
-                    </small>
-                  </div>
-                  <span className="transaction-amount">
-                    {transaction.type === 'income' ? '+' : '-'}R${' '}
-                    {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div className="transaction-actions">
-                  <button
-                    type="button"
-                    className="action-button edit-action"
-                    onClick={() => handleEditStart(transaction)}
-                    title="Editar transação"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    type="button"
-                    className="action-button delete-action"
-                    onClick={() => setDeleteConfirm(transaction.id)}
-                    title="Deletar transação"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-          </section>
-        </>
       )}
 
       {deleteUserConfirm && (
