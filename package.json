@@ -8,7 +8,9 @@
   "scripts": {
     "dev:web": "npm --workspace @a-new-project/web run dev",
     "dev:api": "npm --workspace @a-new-project/api run dev",
+    "dev:api:tunnel": "cloudflared tunnel --url http://localhost:3001",
     "dev:mobile": "npm --workspace @a-new-project/mobile run start",
+    "dev:mobile:tunnel": "npm --workspace @a-new-project/mobile run start -- --tunnel --clear",
     "build": "npm --workspace @a-new-project/shared run build && npm --workspace @a-new-project/api run build && npm --workspace @a-new-project/web run build",
     "lint": "npm run lint --workspaces --if-present"
   },

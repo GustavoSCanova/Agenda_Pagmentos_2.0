@@ -296,13 +296,26 @@ O administrador pode consultar todos os usuários e transações e alterar o e-m
 
 ## Acesso fora da rede local
 
-Sim: com o computador ligado, o app pode ser usado fora de casa, mas a API precisa ter uma URL HTTPS pública. A alternativa prática para manter o servidor nesta máquina é o Cloudflare Tunnel, que não requer abrir portas no roteador.
+O app pode ser usado tanto na rede local quanto fora de casa pelo 5G. Com o computador ligado, a API precisa ter uma URL HTTPS pública para o modo externo. A alternativa prática para manter o servidor nesta máquina é o Cloudflare Tunnel, que não requer abrir portas no roteador.
+
+### Modo local
+
+O arquivo [apps/mobile/.env](apps/mobile/.env) já está configurado para a rede local. Inicie a API e o Expo normalmente:
+
+```bash
+npm run dev:api
+npm run dev:mobile
+```
+
+O telefone deve estar no mesmo Wi-Fi que o computador.
+
+### Modo remoto pelo 5G
 
 1. Instale e autentique o `cloudflared` na máquina do servidor.
-2. Com a API em execução na porta `3001`, abra o túnel: `cloudflared tunnel --url http://localhost:3001`.
+2. Com a API em execução na porta `3001`, abra o túnel: `npm run dev:api:tunnel`.
 3. Copie a URL HTTPS exibida, como `https://exemplo.trycloudflare.com`.
-4. Crie `apps/mobile/.env` a partir de `apps/mobile/.env.example` e defina `EXPO_PUBLIC_API_URL` com essa URL.
-5. Reinicie o Expo para que a variável seja incluída no aplicativo.
+4. Troque `EXPO_PUBLIC_API_URL` em [apps/mobile/.env](apps/mobile/.env) pela URL do túnel.
+5. Inicie o Expo em modo remoto: `npm run dev:mobile:tunnel`.
 
 ```env
 EXPO_PUBLIC_API_URL=https://exemplo.trycloudflare.com
