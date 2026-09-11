@@ -291,6 +291,31 @@ export const persistTransaction = async ({
   } satisfies Transaction;
 };
 
+export const replaceTransactionsForUser = async (
+  userId: string,
+  incomingTransactions: Omit<Transaction, 'id'>[],
+) => {
+  await runAsync('DELETE FROM transactions WHERE user_id = ?', [userId]);
+
+  const inserted: Transaction[] = [];
+
+  for (const transaction of incomingTransactions) {
+    const created = await persistTransaction({
+      userId,
+      title: transaction.title,
+      amount: transaction.amount,
+      type: transaction.type,
+      category: transaction.category,
+      date: transaction.date,
+      description: transaction.description,
+    });
+
+    inserted.push(created);
+  }
+
+  return inserted;
+};
+
 export const updateTransactionById = async (
   id: string,
   userId: string,

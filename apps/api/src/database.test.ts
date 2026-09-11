@@ -10,6 +10,7 @@ import {
   listTransactions,
   listUsers,
   persistTransaction,
+  replaceTransactionsForUser,
   updateTransactionById,
   updateUserByAdmin,
   verifyUserCredentials,
@@ -75,6 +76,46 @@ describe('persistência do banco', () => {
     await updateUserByAdmin(user.id, { email, password: 'senha-nova' });
 
     assert.ok(await verifyUserCredentials(email, 'senha-nova'));
+  });
+
+  it('deve substituir todas as transações do usuário ao importar uma planilha', async () => {
+    const email = `import-substitui-${Date.now()}@persistencia.com`;
+    const user = await createUser({ name: 'Usuário importação', email, password: '123456' });
+
+    await persistTransaction({
+      userId: user.id,
+      title: 'Antiga',
+      amount: 50,
+      type: 'expense',
+      category: 'Teste',
+      date: '2026-09-01',
+    });
+
+    await persistTransaction({
+      userId: user.id,
+      title: 'Antiga 2',
+      amount: 25,
+      type: 'income',
+      category: 'Teste',
+      date: '2026-09-02',
+    });
+
+    const imported = await replaceTransactionsForUser(user.id, [
+      {
+        title: 'Nova importada',
+        amount: 200,
+        type: 'expense',
+        category: 'Importação',
+        date: '2026-09-10',
+        description: 'Substituiu as antigas',
+      },
+    ]);
+
+    const transactions = await listTransactions(user.id);
+    assert.equal(transactions.length, 1);
+    assert.equal(transactions[0].title, 'Nova importada');
+    assert.equal(imported.length, 1);
+    assert.equal(transactions[0].description, 'Substituiu as antigas');
   });
 
   it('deve permitir ao administrador excluir um usuário e as transações dele', async () => {

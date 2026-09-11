@@ -16,6 +16,7 @@ import {
   listTransactions,
   listUsers,
   persistTransaction,
+  replaceTransactionsForUser,
   updateTransactionById,
   updateUserByAdmin,
   verifyUserCredentials,
@@ -246,9 +247,7 @@ app.post('/api/transactions/import', authMiddleware, upload.single('file'), asyn
 
   try {
     const { transactions, rejectedRows } = readTransactionsSpreadsheet(req.file.buffer);
-    const importedTransactions = await Promise.all(
-      transactions.map((transaction) => persistTransaction({ userId, ...transaction })),
-    );
+    const importedTransactions = await replaceTransactionsForUser(userId, transactions);
 
     return res.status(201).json({
       imported: importedTransactions.length,
