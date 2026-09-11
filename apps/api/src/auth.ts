@@ -4,6 +4,7 @@ export type AuthUser = {
   id: string;
   name: string;
   email: string;
+  role?: 'admin';
 };
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'finance-dev-secret';
@@ -20,6 +21,7 @@ export const createAuthToken = (user: AuthUser) => {
     sub: user.id,
     name: user.name,
     email: user.email,
+    role: user.role,
     iat: Math.floor(Date.now() / 1000),
   });
 
@@ -53,11 +55,13 @@ export const verifyAuthToken = (token: string) => {
     sub: string;
     name: string;
     email: string;
+    role?: 'admin';
   };
 
   return {
     id: parsedPayload.sub,
     name: parsedPayload.name,
     email: parsedPayload.email,
+    role: parsedPayload.role,
   };
 };

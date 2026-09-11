@@ -2,6 +2,7 @@ node_modules
 .expo/
 .env
 .env.*
+admin.local.json
 .DS_Store
 dist
 build

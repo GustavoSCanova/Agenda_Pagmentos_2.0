@@ -1,4 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -19,6 +22,12 @@ type User = {
   id: string;
   name: string;
   email: string;
+  role?: 'admin';
+};
+
+type AdminData = {
+  users: User[];
+  transactions: Array<Transaction & { userId: string; userName: string; userEmail: string }>;
 };
 
 type Transaction = {
@@ -48,7 +57,7 @@ type TransactionForm = {
   date: string;
 };
 
-const API_BASE_URL = 'http://192.168.15.168:3001';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.15.168:3001';
 const TOKEN_KEY = 'finance_token';
 
 //const emptyAuth = 
@@ -158,10 +167,14 @@ export default function App() {
   });
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [adminLogin, setAdminLogin] = useState(false);
   const [authData, setAuthData] = useState(emptyAuth);
   const [form, setForm] = useState<TransactionForm>(emptyForm);
   const [editForm, setEditForm] = useState<TransactionForm>(emptyForm);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [adminData, setAdminData] = useState<AdminData | null>(null);
+  const [selectedAdminUserId, setSelectedAdminUserId] = useState<string | null>(null);
+  const [editingAdminUser, setEditingAdminUser] = useState<(User & { password: string }) | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Histórico:
@@ -232,7 +245,11 @@ export default function App() {
 
       setToken(savedToken);
       setUser(payload.user);
-      await loadData(savedToken);
+      if (payload.user.role === 'admin') {
+        await loadAdminData(savedToken);
+      } else {
+        await loadData(savedToken);
+      }
     } catch {
       await AsyncStorage.removeItem(TOKEN_KEY);
       setToken(null);
@@ -248,11 +265,12 @@ export default function App() {
     try {
       setLoading(true);
 
-      const endpoint =
-        authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+      const endpoint = adminLogin
+        ? '/api/auth/admin/login'
+        : authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
 
       const payload =
-        authMode === 'login'
+        adminLogin || authMode === 'login'
           ? { email: authData.email, password: authData.password }
           : {
               name: authData.name,
@@ -269,7 +287,11 @@ export default function App() {
       setToken(result.token);
       setUser(result.user);
       setAuthData(emptyAuth);
-      await loadData(result.token);
+      if (result.user.role === 'admin') {
+        await loadAdminData(result.token);
+      } else {
+        await loadData(result.token);
+      }
     } catch (error) {
       Alert.alert(
         'Erro',
@@ -278,6 +300,66 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadAdminData = async (authToken: string) => {
+    const data = await fetchJson<AdminData>('/api/admin', {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    setAdminData(data);
+  };
+
+  const handleAdminUserUpdate = async () => {
+    if (!token || !editingAdminUser) return;
+
+    try {
+      setLoading(true);
+      await fetchJson(`/api/admin/users/${editingAdminUser.id}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          email: editingAdminUser.email,
+          ...(editingAdminUser.password ? { password: editingAdminUser.password } : {}),
+        }),
+      });
+      setEditingAdminUser(null);
+      await loadAdminData(token);
+    } catch (error) {
+      Alert.alert('Erro', error instanceof Error ? error.message : 'Não foi possível atualizar o usuário.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdminUserDelete = (selectedUser: User) => {
+    Alert.alert(
+      'Excluir usuário',
+      `Deseja excluir ${selectedUser.name}? Todas as transações desta conta serão apagadas permanentemente.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            if (!token) return;
+
+            try {
+              setLoading(true);
+              await fetchJson(`/api/admin/users/${selectedUser.id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (selectedAdminUserId === selectedUser.id) setSelectedAdminUserId(null);
+              await loadAdminData(token);
+            } catch (error) {
+              Alert.alert('Erro', error instanceof Error ? error.message : 'Não foi possível excluir o usuário.');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const validateForm = (data: TransactionForm) => {
@@ -412,6 +494,85 @@ export default function App() {
     );
   };
 
+  const handleExport = async () => {
+    if (!token) return;
+
+    try {
+      setLoading(true);
+      const result = await FileSystem.downloadAsync(
+        `${API_BASE_URL}/api/transactions/export`,
+        `${FileSystem.cacheDirectory}transacoes.xlsx`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      if (result.status !== 200) {
+        throw new Error('Não foi possível exportar as transações.');
+      }
+
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('Arquivo criado', `A planilha foi salva em ${result.uri}.`);
+        return;
+      }
+
+      await Sharing.shareAsync(result.uri, {
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        dialogTitle: 'Exportar transações',
+        UTI: 'com.microsoft.excel.xlsx',
+      });
+    } catch (error) {
+      Alert.alert('Erro', error instanceof Error ? error.message : 'Não foi possível exportar as transações.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!token) return;
+
+    try {
+      const selection = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-excel',
+          'text/csv',
+        ],
+        copyToCacheDirectory: true,
+      });
+
+      if (selection.canceled) return;
+
+      setLoading(true);
+      const file = selection.assets[0];
+      const formData = new FormData();
+      formData.append('file', {
+        uri: file.uri,
+        name: file.name,
+        type: file.mimeType ?? 'application/octet-stream',
+      } as unknown as Blob);
+
+      const response = await fetch(`${API_BASE_URL}/api/transactions/import`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result.message ?? 'Não foi possível importar o arquivo.');
+      }
+
+      const rejected = result.rejectedRows?.length
+        ? ` ${result.rejectedRows.length} linha(s) foram ignoradas por dados inválidos.`
+        : '';
+      Alert.alert('Importação concluída', `${result.imported} transação(ões) importada(s).${rejected}`);
+      await loadData(token);
+    } catch (error) {
+      Alert.alert('Erro', error instanceof Error ? error.message : 'Não foi possível importar o arquivo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = async () => {
     await AsyncStorage.removeItem(TOKEN_KEY);
     setToken(null);
@@ -448,80 +609,66 @@ export default function App() {
         <View style={styles.authCard}>
           <Text style={styles.eyebrow}>Finance App</Text>
           <Text style={styles.title}>
-            {authMode === 'login' ? 'Acessar conta' : 'Criar conta'}
+            {adminLogin ? 'Acesso administrativo' : authMode === 'login' ? 'Acessar conta' : 'Criar conta'}
           </Text>
 
-          <View style={styles.switchRow}>
-            <Pressable
-              style={[
-                styles.switchButton,
-                authMode === 'login' && styles.switchButtonActive,
-              ]}
-              onPress={() => setAuthMode('login')}
-            >
-              <Text style={styles.switchText}>Login</Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.switchButton,
-                authMode === 'register' && styles.switchButtonActive,
-              ]}
-              onPress={() => setAuthMode('register')}
-            >
-              <Text style={styles.switchText}>Registrar</Text>
-            </Pressable>
-          </View>
-
-          {authMode === 'register' && (
-            <TextInput
-              style={styles.input}
-              placeholder="Nome"
-              value={authData.name}
-              onChangeText={(value) =>
-                setAuthData((current) => ({ ...current, name: value }))
-              }
-            />
+          {adminLogin ? (
+            <>
+              <TextInput style={styles.input} placeholder="E-mail do administrador" autoCapitalize="none" keyboardType="email-address" value={authData.email} onChangeText={(value) => setAuthData((current) => ({ ...current, email: value }))} />
+              <TextInput style={styles.input} placeholder="Senha do administrador" secureTextEntry value={authData.password} onChangeText={(value) => setAuthData((current) => ({ ...current, password: value }))} />
+              <Pressable style={styles.primaryButton} onPress={handleAuthSubmit} disabled={loading}><Text style={styles.primaryButtonText}>{loading ? 'Aguarde...' : 'Entrar como administrador'}</Text></Pressable>
+              <Pressable style={styles.textButton} onPress={() => setAdminLogin(false)}><Text style={styles.textButtonLabel}>Voltar</Text></Pressable>
+            </>
+          ) : (
+            <>
+              <View style={styles.switchRow}>
+                <Pressable style={[styles.switchButton, authMode === 'login' && styles.switchButtonActive]} onPress={() => setAuthMode('login')}><Text style={styles.switchText}>Login</Text></Pressable>
+                <Pressable style={[styles.switchButton, authMode === 'register' && styles.switchButtonActive]} onPress={() => setAuthMode('register')}><Text style={styles.switchText}>Registrar</Text></Pressable>
+              </View>
+              {authMode === 'register' && <TextInput style={styles.input} placeholder="Nome" value={authData.name} onChangeText={(value) => setAuthData((current) => ({ ...current, name: value }))} />}
+              <TextInput style={styles.input} placeholder="E-mail" autoCapitalize="none" keyboardType="email-address" value={authData.email} onChangeText={(value) => setAuthData((current) => ({ ...current, email: value }))} />
+              <TextInput style={styles.input} placeholder="Senha" secureTextEntry value={authData.password} onChangeText={(value) => setAuthData((current) => ({ ...current, password: value }))} />
+              <Pressable style={styles.primaryButton} onPress={handleAuthSubmit} disabled={loading}><Text style={styles.primaryButtonText}>{loading ? 'Aguarde...' : authMode === 'login' ? 'Entrar' : 'Criar conta'}</Text></Pressable>
+              {authMode === 'login' && <Pressable style={styles.textButton} onPress={() => setAdminLogin(true)}><Text style={styles.textButtonLabel}>Acesso administrador</Text></Pressable>}
+            </>
           )}
-
-          <TextInput
-            style={styles.input}
-            placeholder="E-mail"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={authData.email}
-            onChangeText={(value) =>
-              setAuthData((current) => ({ ...current, email: value }))
-            }
-          />
-
-          <TextInput
-            style={styles.input}
-            placeholder="Senha"
-            secureTextEntry
-            value={authData.password}
-            onChangeText={(value) =>
-              setAuthData((current) => ({ ...current, password: value }))
-            }
-          />
-
-          <Pressable
-            style={styles.primaryButton}
-            onPress={handleAuthSubmit}
-            disabled={loading}
-          >
-            <Text style={styles.primaryButtonText}>
-              {loading
-                ? 'Aguarde...'
-                : authMode === 'login'
-                  ? 'Entrar'
-                  : 'Criar conta'}
-            </Text>
-          </Pressable>
         </View>
 
         <StatusBar style="auto" />
       </KeyboardAvoidingView>
+    );
+  }
+
+  if (user.role === 'admin') {
+    const selectedUser = (adminData?.users ?? []).find((item) => item.id === selectedAdminUserId);
+    const selectedTransactions = (adminData?.transactions ?? []).filter((item) => item.userId === selectedAdminUserId);
+
+    return (
+      <View style={styles.screen}>
+        <FlatList
+          data={adminData?.users ?? []}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.content}
+          ListHeaderComponent={<View style={styles.adminHeader}><View><Text style={styles.eyebrow}>Finance App</Text><Text style={styles.pageTitle}>Administração</Text><Text style={styles.userLabel}>Olá, {user.name}</Text></View><Pressable style={styles.logoutButton} onPress={logout}><Text style={styles.logoutButtonText}>Sair</Text></Pressable></View>}
+          renderItem={({ item }) => (
+            <View style={[styles.adminUserCard, selectedAdminUserId === item.id && styles.adminUserCardSelected]}>
+              <Pressable style={styles.adminUserInfo} onPress={() => setSelectedAdminUserId(item.id)}>
+                <Text style={styles.transactionTitle}>{item.name}</Text>
+                <Text style={styles.transactionMeta}>{item.email}</Text>
+              </Pressable>
+              <View style={styles.adminUserActions}>
+                <Pressable style={styles.adminEditButton} onPress={() => setEditingAdminUser({ ...item, password: '' })}><Text style={styles.adminActionText}>Editar</Text></Pressable>
+                <Pressable style={styles.adminDeleteButton} onPress={() => handleAdminUserDelete(item)}><Text style={styles.adminActionText}>Excluir</Text></Pressable>
+              </View>
+            </View>
+          )}
+          ListFooterComponent={<View style={styles.adminTransactions}><Text style={styles.cardTitle}>{selectedUser ? `Transações de ${selectedUser.name}` : 'Dados do usuário'}</Text>{!selectedUser ? <Text style={styles.emptyText}>Toque em um usuário para visualizar suas transações.</Text> : selectedTransactions.length === 0 ? <Text style={styles.emptyText}>Este usuário ainda não possui transações.</Text> : selectedTransactions.map((item) => <View key={item.id} style={[styles.transactionItem, item.type === 'income' ? styles.incomeItem : styles.expenseItem]}><View style={styles.transactionInfo}><Text style={styles.transactionTitle}>{item.title}</Text><Text style={styles.transactionMeta}>{item.category} · {item.date}</Text></View><Text style={styles.transactionAmount}>{item.type === 'income' ? '+' : '-'} {formatCurrency(item.amount)}</Text></View>)}</View>}
+        />
+        <Modal visible={editingAdminUser !== null} transparent animationType="slide" onRequestClose={() => setEditingAdminUser(null)}>
+          <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><View style={styles.modalCard}><Text style={styles.modalTitle}>Editar usuário</Text><TextInput style={styles.input} placeholder="E-mail" autoCapitalize="none" keyboardType="email-address" value={editingAdminUser?.email ?? ''} onChangeText={(value) => setEditingAdminUser((current) => current && { ...current, email: value })} /><TextInput style={styles.input} placeholder="Nova senha (opcional)" secureTextEntry value={editingAdminUser?.password ?? ''} onChangeText={(value) => setEditingAdminUser((current) => current && { ...current, password: value })} /><Pressable style={styles.primaryButton} onPress={handleAdminUserUpdate} disabled={loading}><Text style={styles.primaryButtonText}>Salvar</Text></Pressable><Pressable style={styles.cancelButton} onPress={() => setEditingAdminUser(null)}><Text style={styles.cancelButtonText}>Cancelar</Text></Pressable></View></KeyboardAvoidingView>
+        </Modal>
+        <StatusBar style="auto" />
+      </View>
     );
   }
 
@@ -743,16 +890,23 @@ export default function App() {
                     {transactions.length} transação(ões)
                   </Text>
                 </View>
+              </View>
 
-                {/* <Pressable
-                  style={styles.expandButton}
-                  onPress={() => setHistoryExpanded((value) => !value)}
+              <View style={styles.fileActions}>
+                <Pressable
+                  style={[styles.fileButton, styles.exportButton]}
+                  onPress={handleExport}
+                  disabled={loading}
                 >
-                  <Text style={styles.expandButtonText}>
-                    {historyExpanded ? 'Recolher' : 'Ver tudo'}
-                  </Text>
-                </Pressable> */}
-
+                  <Text style={styles.fileButtonText}>Exportar Excel</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.fileButton}
+                  onPress={handleImport}
+                  disabled={loading}
+                >
+                  <Text style={styles.fileButtonText}>Importar arquivo</Text>
+                </Pressable>
               </View>
 
               {visibleGroups.map(([month, monthTransactions]) => {
@@ -1078,10 +1232,81 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
+  textButton: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+
+  textButtonLabel: {
+    color: '#2563eb',
+    fontWeight: '700',
+  },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+
+  adminHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+
+  adminUserCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe3f0',
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 10,
+    padding: 12,
+  },
+
+  adminUserCardSelected: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#2563eb',
+  },
+
+  adminUserInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  adminUserActions: {
+    flexDirection: 'row',
+    gap: 6,
+    marginLeft: 8,
+  },
+
+  adminEditButton: {
+    backgroundColor: '#f59e0b',
+    borderRadius: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+  },
+
+  adminDeleteButton: {
+    backgroundColor: '#ef4444',
+    borderRadius: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+  },
+
+  adminActionText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  adminTransactions: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    marginTop: 10,
+    padding: 16,
   },
 
   headerText: {
@@ -1311,6 +1536,32 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
+  },
+
+  fileActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+
+  fileButton: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    backgroundColor: '#2563eb',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+
+  exportButton: {
+    backgroundColor: '#475569',
+  },
+
+  fileButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
 
   historySubtitle: {

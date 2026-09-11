@@ -1,11 +1,15 @@
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import multer from 'multer';
 import type { Summary, Transaction, TransactionType } from '@a-new-project/shared';
+import { verifyAdminCredentials } from './admin.js';
 import { createAuthToken, verifyAuthToken, type AuthUser } from './auth.js';
+import { createTransactionsSpreadsheet, readTransactionsSpreadsheet } from './spreadsheet.js';
 import {
   createUser,
   deleteTransactionById,
+  deleteUserByAdmin,
   deleteUserById,
   findUserByEmail,
   listAllTransactions,
@@ -13,6 +17,7 @@ import {
   listUsers,
   persistTransaction,
   updateTransactionById,
+  updateUserByAdmin,
   verifyUserCredentials,
 } from './database.js';
 
@@ -28,6 +33,10 @@ dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
 
 const seedDemoUser = async () => {
   const existingUser = await findUserByEmail('demo@financapp.com');
@@ -72,6 +81,14 @@ const authMiddleware = (req: Request, res: Response, next: () => void) => {
   } catch (_error) {
     return res.status(401).json({ message: 'Token inválido ou expirado.' });
   }
+};
+
+const adminMiddleware = (req: Request, res: Response, next: () => void) => {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ message: 'Acesso restrito ao administrador.' });
+  }
+
+  return next();
 };
 
 app.use(cors());
@@ -124,14 +141,59 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   return res.status(200).json({ user, token });
 });
 
+app.post('/api/auth/admin/login', (req: Request, res: Response) => {
+  const { email, password } = req.body as { email?: string; password?: string };
+
+  if (!email || !password) {
+    return res.status(400).json({ message: 'E-mail e senha são obrigatórios.' });
+  }
+
+  try {
+    if (!verifyAdminCredentials(email, password)) {
+      return res.status(401).json({ message: 'Credenciais inválidas.' });
+    }
+  } catch (error) {
+    return res.status(503).json({ message: error instanceof Error ? error.message : 'Administrador indisponível.' });
+  }
+
+  const user: AuthUser = { id: 'admin', name: 'Administrador', email: email.trim().toLowerCase(), role: 'admin' };
+  return res.json({ user, token: createAuthToken(user) });
+});
+
 app.get('/api/me', authMiddleware, (req: Request, res: Response) => {
   res.json({ user: req.user });
 });
 
-app.get('/api/admin', authMiddleware, async (_req: Request, res: Response) => {
+app.get('/api/admin', authMiddleware, adminMiddleware, async (_req: Request, res: Response) => {
   const [users, transactions] = await Promise.all([listUsers(), listAllTransactions()]);
 
   return res.json({ users, transactions });
+});
+
+app.put('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const userId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const { email, password } = req.body as { email?: string; password?: string };
+
+  if (!email || (password !== undefined && password.length < 6)) {
+    return res.status(400).json({ message: 'Informe um e-mail válido e, se desejar trocar a senha, use ao menos seis caracteres.' });
+  }
+
+  try {
+    return res.json(await updateUserByAdmin(userId, { email, password }));
+  } catch (error) {
+    return res.status(400).json({ message: error instanceof Error ? error.message : 'Não foi possível atualizar o usuário.' });
+  }
+});
+
+app.delete('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const userId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  try {
+    await deleteUserByAdmin(userId);
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(404).json({ message: error instanceof Error ? error.message : 'Não foi possível excluir o usuário.' });
+  }
 });
 
 app.get('/api/transactions', authMiddleware, async (req: Request, res: Response) => {
@@ -154,6 +216,49 @@ app.get('/api/summary', authMiddleware, async (req: Request, res: Response) => {
 
   const transactions = await listTransactions(userId);
   return res.json(getSummary(transactions));
+});
+
+app.get('/api/transactions/export', authMiddleware, async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ message: 'Usuário não autenticado.' });
+  }
+
+  const transactions = await listTransactions(userId);
+  const file = createTransactionsSpreadsheet(transactions);
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="transacoes.xlsx"');
+  return res.send(file);
+});
+
+app.post('/api/transactions/import', authMiddleware, upload.single('file'), async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ message: 'Usuário não autenticado.' });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ message: 'Selecione um arquivo XLSX ou CSV para importar.' });
+  }
+
+  try {
+    const { transactions, rejectedRows } = readTransactionsSpreadsheet(req.file.buffer);
+    const importedTransactions = await Promise.all(
+      transactions.map((transaction) => persistTransaction({ userId, ...transaction })),
+    );
+
+    return res.status(201).json({
+      imported: importedTransactions.length,
+      rejectedRows,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      message: error instanceof Error ? error.message : 'Não foi possível ler o arquivo informado.',
+    });
+  }
 });
 
 app.post('/api/transactions', authMiddleware, async (req: Request, res: Response) => {

@@ -113,6 +113,36 @@ h1 {
   padding: 12px 14px;
 }
 
+.admin-list li.selected-admin-user {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.admin-user-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  color: #0f172a;
+  text-align: left;
+}
+
+.admin-user-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.admin-user-actions button {
+  padding: 8px 10px;
+  font-size: 0.8rem;
+}
+
+.empty-admin-state {
+  margin: 0;
+  color: #64748b;
+}
+
 .admin-list strong,
 .admin-list span {
   display: block;
@@ -390,6 +420,42 @@ h1 {
   font-size: 1.2rem;
 }
 
+.list-header,
+.data-actions {
+  display: flex;
+  align-items: center;
+}
+
+.list-header {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.data-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.data-actions button,
+.import-button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.import-button {
+  background: #2563eb;
+  color: #fff;
+}
+
+.import-button input {
+  display: none;
+}
+
 label {
   display: flex;
   flex-direction: column;
@@ -474,6 +540,13 @@ button:hover {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.text-button {
+  align-self: center;
+  background: transparent;
+  color: #2563eb;
+  padding: 4px;
 }
 
 .transaction-list {

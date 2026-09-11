@@ -27,6 +27,11 @@ export type PersistTransactionInput = {
   description?: string;
 };
 
+export type AdminUserUpdateInput = {
+  email: string;
+  password?: string;
+};
+
 const dataDir = path.join(process.cwd(), 'data');
 fs.mkdirSync(dataDir, { recursive: true });
 
@@ -94,6 +99,7 @@ const ensureSchema = async () => {
       FOREIGN KEY(user_id) REFERENCES users(id)
     )
   `);
+
 };
 
 await ensureSchema();
@@ -151,6 +157,41 @@ export const verifyUserCredentials = async (email: string, password: string) => 
     name: user.name,
     email: user.email,
   };
+};
+
+export const updateUserByAdmin = async (userId: string, { email, password }: AdminUserUpdateInput) => {
+  const user = await getAsync<{ id: string; name: string }>('SELECT id, name FROM users WHERE id = ?', [userId]);
+
+  if (!user) {
+    throw new Error('Usuário não encontrado.');
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const duplicate = await getAsync<{ id: string }>('SELECT id FROM users WHERE email = ? AND id != ?', [normalizedEmail, userId]);
+
+  if (duplicate) {
+    throw new Error('Este e-mail já está em uso.');
+  }
+
+  if (password) {
+    await runAsync('UPDATE users SET email = ?, password_hash = ? WHERE id = ?', [normalizedEmail, hashPassword(password), userId]);
+  } else {
+    await runAsync('UPDATE users SET email = ? WHERE id = ?', [normalizedEmail, userId]);
+  }
+
+  return { id: user.id, name: user.name, email: normalizedEmail };
+};
+
+export const deleteUserByAdmin = async (userId: string) => {
+  const user = await getAsync<{ id: string }>('SELECT id FROM users WHERE id = ?', [userId]);
+
+  if (!user) {
+    throw new Error('Usuário não encontrado.');
+  }
+
+  await runAsync('DELETE FROM transactions WHERE user_id = ?', [userId]);
+  await runAsync('DELETE FROM users WHERE id = ?', [userId]);
+  return true;
 };
 
 export const listTransactions = async (userId: string): Promise<Transaction[]> => {

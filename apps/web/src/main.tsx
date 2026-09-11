@@ -19,20 +19,27 @@ const emptyAuth = {
   password: '',
 };
 
+type SessionUser = { id: string; name: string; email: string; role?: 'admin' };
+
 function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<Summary>({ income: 0, expense: 0, balance: 0 });
   const [form, setForm] = useState(emptyForm);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [adminLogin, setAdminLogin] = useState(false);
   const [authData, setAuthData] = useState(emptyAuth);
   const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [adminView, setAdminView] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<{ title: string; amount: number; type: 'income' | 'expense'; category: string; date: string; description?: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<string | null>(null);
   const [deleteUserPassword, setDeleteUserPassword] = useState('');
+  const [adminUserEdit, setAdminUserEdit] = useState<{ id: string; name: string; email: string; password: string } | null>(null);
+  const [selectedAdminUserId, setSelectedAdminUserId] = useState<string | null>(null);
+  const [adminUserDelete, setAdminUserDelete] = useState<{ id: string; name: string } | null>(null);
+  const [importing, setImporting] = useState(false);
   const [adminData, setAdminData] = useState<{ users: Array<{ id: string; name: string; email: string }>; transactions: Array<{
     id: string;
     userId: string;
@@ -109,9 +116,9 @@ function App() {
   const handleAuthSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+    const endpoint = adminLogin ? '/api/auth/admin/login' : authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
     const payload =
-      authMode === 'login'
+      adminLogin || authMode === 'login'
         ? { email: authData.email, password: authData.password }
         : { name: authData.name, email: authData.email, password: authData.password };
 
@@ -131,9 +138,53 @@ function App() {
     saveToken(result.token);
     setUser(result.user);
     setToken(result.token);
+    setAdminView(result.user.role === 'admin');
     setAuthData(emptyAuth);
     void loadData(result.token);
     void loadAdminData(result.token);
+  };
+
+  const handleAdminUserUpdate = async () => {
+    if (!token || !adminUserEdit) return;
+
+    const response = await fetch(`/api/admin/users/${adminUserEdit.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        email: adminUserEdit.email,
+        ...(adminUserEdit.password ? { password: adminUserEdit.password } : {}),
+      }),
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      alert(result.message ?? 'Não foi possível atualizar o usuário.');
+      return;
+    }
+
+    setAdminUserEdit(null);
+    void loadAdminData(token);
+  };
+
+  const handleAdminUserDelete = async () => {
+    if (!token || !adminUserDelete) return;
+
+    const response = await fetch(`/api/admin/users/${adminUserDelete.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      alert(result.message ?? 'Não foi possível excluir o usuário.');
+      return;
+    }
+
+    if (selectedAdminUserId === adminUserDelete.id) {
+      setSelectedAdminUserId(null);
+    }
+    setAdminUserDelete(null);
+    void loadAdminData(token);
   };
 
   const loadAdminData = async (authToken: string) => {
@@ -277,6 +328,62 @@ function App() {
     }
   };
 
+  const handleExport = async () => {
+    if (!token) return;
+
+    const response = await fetch('/api/transactions/export', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      alert('Não foi possível exportar as transações.');
+      return;
+    }
+
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'transacoes.xlsx';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file || !token) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      setImporting(true);
+      const response = await fetch('/api/transactions/import', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        alert(result.message ?? 'Não foi possível importar o arquivo.');
+        return;
+      }
+
+      const rejected = result.rejectedRows?.length
+        ? ` ${result.rejectedRows.length} linha(s) foram ignoradas por dados inválidos.`
+        : '';
+      alert(`${result.imported} transação(ões) importada(s).${rejected}`);
+      void loadData(token);
+      void loadAdminData(token);
+    } catch {
+      alert('Não foi possível importar o arquivo.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const logout = () => {
     clearToken();
     setToken(null);
@@ -292,37 +399,30 @@ function App() {
       <main className="auth-shell">
         <div className="auth-card">
           <p className="eyebrow">Finance App</p>
-          <h1>{authMode === 'login' ? 'Acessar conta' : 'Criar conta'}</h1>
+          <h1>{adminLogin ? 'Acesso administrativo' : authMode === 'login' ? 'Acessar conta' : 'Criar conta'}</h1>
 
-          <div className="mode-switch">
-            <button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>
-              Login
-            </button>
-            <button type="button" className={authMode === 'register' ? 'active' : ''} onClick={() => setAuthMode('register')}>
-              Registrar
-            </button>
-          </div>
-
-          <form onSubmit={handleAuthSubmit} className="auth-form">
-            {authMode === 'register' && (
-              <label>
-                Nome
-                <input name="name" value={authData.name} onChange={handleAuthChange} required />
-              </label>
-            )}
-
-            <label>
-              E-mail
-              <input type="email" name="email" value={authData.email} onChange={handleAuthChange} required />
-            </label>
-
-            <label>
-              Senha
-              <input type="password" name="password" value={authData.password} onChange={handleAuthChange} required />
-            </label>
-
-            <button type="submit">{authMode === 'login' ? 'Entrar' : 'Registrar'}</button>
-          </form>
+          {adminLogin ? (
+            <form onSubmit={handleAuthSubmit} className="auth-form">
+              <label>E-mail do administrador<input type="email" name="email" value={authData.email} onChange={handleAuthChange} required /></label>
+              <label>Senha do administrador<input type="password" name="password" value={authData.password} onChange={handleAuthChange} required /></label>
+              <button type="submit">Entrar como administrador</button>
+              <button type="button" className="text-button" onClick={() => setAdminLogin(false)}>Voltar</button>
+            </form>
+          ) : (
+            <>
+              <div className="mode-switch">
+                <button type="button" className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>Login</button>
+                <button type="button" className={authMode === 'register' ? 'active' : ''} onClick={() => setAuthMode('register')}>Registrar</button>
+              </div>
+              <form onSubmit={handleAuthSubmit} className="auth-form">
+                {authMode === 'register' && <label>Nome<input name="name" value={authData.name} onChange={handleAuthChange} required /></label>}
+                <label>E-mail<input type="email" name="email" value={authData.email} onChange={handleAuthChange} required /></label>
+                <label>Senha<input type="password" name="password" value={authData.password} onChange={handleAuthChange} required /></label>
+                <button type="submit">{authMode === 'login' ? 'Entrar' : 'Registrar'}</button>
+                {authMode === 'login' && <button type="button" className="text-button" onClick={() => setAdminLogin(true)}>Acesso administrador</button>}
+              </form>
+            </>
+          )}
         </div>
 
       </main>
@@ -338,9 +438,7 @@ function App() {
           <p className="user-label">Olá, {user.name}</p>
         </div>
         <div className="header-actions">
-          <button type="button" className="secondary-button" onClick={() => setAdminView((value) => !value)}>
-            {adminView ? 'Voltar' : 'Admin'}
-          </button>
+          {user.role === 'admin' && <button type="button" className="secondary-button" onClick={() => setAdminView((value) => !value)}>{adminView ? 'Voltar' : 'Admin'}</button>}
           <button type="button" className="logout-button" onClick={logout}>Sair</button>
         </div>
       </header>
@@ -351,21 +449,16 @@ function App() {
             <h2>Usuários</h2>
             <ul className="admin-list">
               {(adminData?.users ?? []).map((item) => (
-                <li key={item.id}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                <li key={item.id} className={selectedAdminUserId === item.id ? 'selected-admin-user' : ''}>
+                  <button type="button" className="admin-user-select" onClick={() => setSelectedAdminUserId(item.id)}>
                     <div>
                       <strong>{item.name}</strong>
                       <span>{item.email}</span>
                     </div>
-                    {user?.id === item.id && (
-                      <button
-                        className="danger-button"
-                        onClick={() => setDeleteUserConfirm(item.id)}
-                        style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                      >
-                        Deletar Conta
-                      </button>
-                    )}
+                  </button>
+                  <div className="admin-user-actions">
+                    <button type="button" className="secondary-button" onClick={() => setAdminUserEdit({ id: item.id, name: item.name, email: item.email, password: '' })}>Editar</button>
+                    <button type="button" className="danger-button" onClick={() => setAdminUserDelete({ id: item.id, name: item.name })}>Excluir</button>
                   </div>
                 </li>
               ))}
@@ -373,9 +466,9 @@ function App() {
           </div>
 
           <div className="card admin-card">
-            <h2>Transações</h2>
+            <h2>{selectedAdminUserId ? `Transações de ${(adminData?.users ?? []).find((item) => item.id === selectedAdminUserId)?.name ?? 'usuário'}` : 'Selecione um usuário'}</h2>
             <ul className="admin-list admin-transactions">
-              {(adminData?.transactions ?? []).map((item) => (
+              {(adminData?.transactions ?? []).filter((item) => item.userId === selectedAdminUserId).map((item) => (
                 <li key={item.id} className="admin-transaction-item">
                   <div className="transaction-info-admin">
                     <strong>{item.title}</strong>
@@ -385,19 +478,11 @@ function App() {
                     <span>{item.type === 'income' ? 'Receita' : 'Despesa'}</span>
                     <strong>R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
                   </div>
-                  <div className="transaction-actions-admin">
-                    <button type="button" className="small-button edit-button" onClick={() => handleEditStart(item as any)}>
-                      Editar
-                    </button>
-                    <button type="button" className="small-button delete-button" onClick={() => setDeleteConfirm(item.id)}>
-                      Excluir
-                    </button>
-                  </div>
                 </li>
               ))}
             </ul>
-
-
+            {selectedAdminUserId && (adminData?.transactions ?? []).every((item) => item.userId !== selectedAdminUserId) && <p className="empty-admin-state">Este usuário ainda não possui transações.</p>}
+            {!selectedAdminUserId && <p className="empty-admin-state">Clique em um usuário para consultar seus dados.</p>}
           </div>
         </section>
       ) : (
@@ -462,7 +547,23 @@ function App() {
         </form>
 
         <div className="card list-card">
-          <h2>Histórico</h2>
+          <div className="list-header">
+            <h2>Histórico</h2>
+            <div className="data-actions">
+              <button type="button" className="secondary-button" onClick={() => void handleExport()}>
+                Exportar Excel
+              </button>
+              <label className="import-button">
+                {importing ? 'Importando...' : 'Importar arquivo'}
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={(event) => void handleImport(event)}
+                  disabled={importing}
+                />
+              </label>
+            </div>
+          </div>
           <ul className="transaction-list">
             {transactions.map((transaction) => (
               <li key={transaction.id} className={transaction.type === 'income' ? 'income-item' : 'expense-item'}>
@@ -539,6 +640,32 @@ function App() {
               >
                 Deletar Conta
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {adminUserEdit && (
+        <div className="modal-overlay" onClick={() => setAdminUserEdit(null)}>
+          <div className="modal-box" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header"><h3>Editar {adminUserEdit.name}</h3><button type="button" className="modal-close" onClick={() => setAdminUserEdit(null)}>✕</button></div>
+            <form className="modal-form" onSubmit={(event) => { event.preventDefault(); void handleAdminUserUpdate(); }}>
+              <label>E-mail<input type="email" value={adminUserEdit.email} onChange={(event) => setAdminUserEdit((current) => current && { ...current, email: event.target.value })} required /></label>
+              <label>Nova senha<input type="password" minLength={6} value={adminUserEdit.password} onChange={(event) => setAdminUserEdit((current) => current && { ...current, password: event.target.value })} placeholder="Deixe vazio para manter" /></label>
+              <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setAdminUserEdit(null)}>Cancelar</button><button type="submit" className="primary-button">Salvar</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {adminUserDelete && (
+        <div className="modal-overlay" onClick={() => setAdminUserDelete(null)}>
+          <div className="modal-box modal-confirm" onClick={(event) => event.stopPropagation()}>
+            <h3>Excluir usuário</h3>
+            <p>Deseja excluir {adminUserDelete.name}? Todas as transações desta conta serão apagadas permanentemente.</p>
+            <div className="modal-actions">
+              <button type="button" className="secondary-button" onClick={() => setAdminUserDelete(null)}>Cancelar</button>
+              <button type="button" className="danger-button" onClick={() => void handleAdminUserDelete()}>Excluir usuário</button>
             </div>
           </div>
         </div>

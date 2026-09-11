@@ -281,3 +281,32 @@ Nos próximos passos, vamos continuar o projeto em etapas:
 
 Este README servirá como guia de estudo e documentação da evolução do projeto.
 
+## Acesso administrativo
+
+Na tela inicial da web, selecione **Acesso administrador**. As credenciais iniciais são:
+
+```text
+E-mail: admin@financeapp.local
+Senha: admin123456
+```
+
+Troque-as antes de expor a aplicação. O arquivo local [apps/api/admin.local.json](apps/api/admin.local.json) controla essas credenciais e não é enviado ao Git. Edite os campos `email` e `password`, salve e reinicie a API para aplicar a alteração.
+
+O administrador pode consultar todos os usuários e transações e alterar o e-mail ou a senha de qualquer usuário no painel administrativo. Usuários comuns não possuem acesso a essa base de dados.
+
+## Acesso fora da rede local
+
+Sim: com o computador ligado, o app pode ser usado fora de casa, mas a API precisa ter uma URL HTTPS pública. A alternativa prática para manter o servidor nesta máquina é o Cloudflare Tunnel, que não requer abrir portas no roteador.
+
+1. Instale e autentique o `cloudflared` na máquina do servidor.
+2. Com a API em execução na porta `3001`, abra o túnel: `cloudflared tunnel --url http://localhost:3001`.
+3. Copie a URL HTTPS exibida, como `https://exemplo.trycloudflare.com`.
+4. Crie `apps/mobile/.env` a partir de `apps/mobile/.env.example` e defina `EXPO_PUBLIC_API_URL` com essa URL.
+5. Reinicie o Expo para que a variável seja incluída no aplicativo.
+
+```env
+EXPO_PUBLIC_API_URL=https://exemplo.trycloudflare.com
+```
+
+Para uso contínuo, prefira uma URL fixa configurada no Cloudflare Tunnel ou publique API e banco em um provedor. O túnel rápido muda de endereço quando é reiniciado. Não exponha diretamente a porta `3001` na internet: use HTTPS, um domínio/túnel e um `JWT_SECRET` forte.
+
