@@ -4,16 +4,27 @@
     "slug": "agenda-pagamentos-2-0",
     "version": "1.0.0",
     "orientation": "portrait",
-    "platforms": ["ios", "android", "web"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "userInterfaceStyle": "light",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
-      }
-    }
+      },
+      "softwareKeyboardLayoutMode": "pan"
+    },
+    "plugins": [
+      "expo-sharing",
+      "expo-status-bar"
+    ]
   }
 }
