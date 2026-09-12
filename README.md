@@ -1,4 +1,4 @@
-# A New Project
+# Agenda de Pagamentos 2.0
 
 Este repositório está sendo construído como um monorepo para um sistema financeiro com arquitetura moderna: web, mobile e API compartilhando o mesmo banco de dados central.
 
