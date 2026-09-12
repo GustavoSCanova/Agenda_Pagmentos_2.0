@@ -178,6 +178,11 @@ export default function App() {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [adminData, setAdminData] = useState<AdminData | null>(null);
   const [selectedAdminUserId, setSelectedAdminUserId] = useState<string | null>(null);
+  const [unlockedAdminUserId, setUnlockedAdminUserId] = useState<string | null>(null);
+  const [unlockedTransactions, setUnlockedTransactions] = useState<Transaction[]>([]);
+  const [adminUserPasswordInput, setAdminUserPasswordInput] = useState('');
+  const [showAdminUserPasswordInput, setShowAdminUserPasswordInput] = useState(false);
+  const [fetchingUserTransactions, setFetchingUserTransactions] = useState(false);
   const [editingAdminUser, setEditingAdminUser] = useState<(User & { password: string }) | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showAdminEditPassword, setShowAdminEditPassword] = useState(false);
@@ -316,6 +321,39 @@ export default function App() {
     setAdminData(data);
   };
 
+  const handleSelectAdminUser = (userId: string) => {
+    setSelectedAdminUserId(userId);
+    if (unlockedAdminUserId !== userId) {
+      setUnlockedAdminUserId(null);
+      setUnlockedTransactions([]);
+      setAdminUserPasswordInput('');
+    }
+  };
+
+  const handleUnlockUserTransactions = async () => {
+    if (!token || !selectedAdminUserId || !adminUserPasswordInput) return;
+
+    try {
+      setFetchingUserTransactions(true);
+      const userTransactions = await fetchJson<Transaction[]>(`/api/admin/users/${selectedAdminUserId}/transactions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ password: adminUserPasswordInput }),
+      });
+
+      setUnlockedAdminUserId(selectedAdminUserId);
+      setUnlockedTransactions(userTransactions);
+      setAdminUserPasswordInput('');
+    } catch (error) {
+      Alert.alert(
+        'Acesso negado',
+        error instanceof Error ? error.message : 'Senha do usuário incorreta.',
+      );
+    } finally {
+      setFetchingUserTransactions(false);
+    }
+  };
+
   const handleAdminUserUpdate = async () => {
     if (!token || !editingAdminUser) return;
 
@@ -325,6 +363,7 @@ export default function App() {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
         body: JSON.stringify({
+          name: editingAdminUser.name,
           email: editingAdminUser.email,
           ...(editingAdminUser.password ? { password: editingAdminUser.password } : {}),
         }),
@@ -1066,17 +1105,17 @@ export default function App() {
             ListHeaderComponent={
               <View style={styles.tabHeader}>
                 <Text style={styles.tabHeading}>Painel Administrativo</Text>
-                <Text style={styles.tabSubheading}>Gerencie usuários e visualise dados cadastrados</Text>
+                <Text style={styles.tabSubheading}>Gerencie usuários e consulte finanças com autorização</Text>
               </View>
             }
             renderItem={({ item }) => (
               <View style={[styles.adminUserCard, selectedAdminUserId === item.id && styles.adminUserCardSelected]}>
-                <Pressable style={styles.adminUserInfo} onPress={() => setSelectedAdminUserId(item.id)}>
+                <Pressable style={styles.adminUserInfo} onPress={() => handleSelectAdminUser(item.id)}>
                   <Text style={styles.adminUserName}>{item.name}</Text>
                   <Text style={styles.adminUserEmail}>{item.email}</Text>
                 </Pressable>
                 <View style={styles.adminUserActions}>
-                  <Pressable style={styles.adminEditButton} onPress={() => setEditingAdminUser({ ...item, password: '' })}>
+                  <Pressable style={styles.adminEditButton} onPress={() => setEditingAdminUser({ id: item.id, name: item.name, email: item.email, password: '' })}>
                     <Text style={styles.adminActionText}>Editar</Text>
                   </Pressable>
                   <Pressable style={styles.adminDeleteButton} onPress={() => handleAdminUserDelete(item)}>
@@ -1087,23 +1126,76 @@ export default function App() {
             )}
             ListFooterComponent={
               <View style={styles.adminTransactionsCard}>
-                <Text style={styles.cardTitle}>{selectedUser ? `Transações de ${selectedUser.name}` : 'Transações do Usuário'}</Text>
+                <Text style={styles.cardTitle}>
+                  {selectedUser ? `Finanças de ${selectedUser.name}` : 'Histórico Financeiro do Usuário'}
+                </Text>
                 {!selectedUser ? (
-                  <Text style={styles.emptyStateText}>Selecione um usuário acima para visualizar suas movimentações.</Text>
-                ) : selectedTransactions.length === 0 ? (
-                  <Text style={styles.emptyStateText}>Este usuário não possui transações.</Text>
-                ) : (
-                  selectedTransactions.map((item) => (
-                    <View key={item.id} style={styles.recentItem}>
-                      <View style={styles.recentInfo}>
-                        <Text style={styles.recentTitle}>{item.title}</Text>
-                        <Text style={styles.recentMeta}>{item.category} · {item.date}</Text>
-                      </View>
-                      <Text style={[styles.recentAmount, item.type === 'income' ? styles.recentAmountIncome : styles.recentAmountExpense]}>
-                        {item.type === 'income' ? '+' : '-'} {formatCurrency(item.amount)}
-                      </Text>
+                  <Text style={styles.emptyStateText}>Selecione um usuário acima para consultar suas movimentações.</Text>
+                ) : unlockedAdminUserId !== selectedUser.id ? (
+                  <View style={styles.adminPrivacyBox}>
+                    <Text style={styles.adminPrivacyTitle}>🔒 Acesso Protegido por Privacidade</Text>
+                    <Text style={styles.adminPrivacyText}>
+                      Para visualizar as finanças de {selectedUser.name}, digite a senha cadastrada do usuário:
+                    </Text>
+                    <View style={styles.passwordWrapper}>
+                      <TextInput
+                        style={[styles.input, styles.passwordInput]}
+                        placeholder="Senha do usuário"
+                        placeholderTextColor="#94a3b8"
+                        secureTextEntry={!showAdminUserPasswordInput}
+                        autoCapitalize="none"
+                        value={adminUserPasswordInput}
+                        onChangeText={setAdminUserPasswordInput}
+                      />
+                      <Pressable
+                        style={styles.eyeButtonAbsolute}
+                        onPress={() => setShowAdminUserPasswordInput((prev) => !prev)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <Text style={styles.eyeIcon}>{showAdminUserPasswordInput ? '👁️' : '🔒'}</Text>
+                      </Pressable>
                     </View>
-                  ))
+                    <Pressable
+                      style={[styles.primaryButton, { marginTop: 12 }]}
+                      onPress={handleUnlockUserTransactions}
+                      disabled={fetchingUserTransactions || !adminUserPasswordInput}
+                    >
+                      <Text style={styles.primaryButtonText}>
+                        {fetchingUserTransactions ? 'Verificando...' : 'Desbloquear Extrato'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.unlockedHeaderRow}>
+                      <Text style={styles.unlockedBadge}>✅ Extrato Liberado ({unlockedTransactions.length} itens)</Text>
+                      <Pressable
+                        style={styles.lockButton}
+                        onPress={() => {
+                          setUnlockedAdminUserId(null);
+                          setUnlockedTransactions([]);
+                        }}
+                      >
+                        <Text style={styles.lockButtonText}>🔒 Bloquear</Text>
+                      </Pressable>
+                    </View>
+
+                    {unlockedTransactions.length === 0 ? (
+                      <Text style={styles.emptyStateText}>Este usuário não possui movimentações cadastradas.</Text>
+                    ) : (
+                      unlockedTransactions.map((item) => (
+                        <View key={item.id} style={styles.recentItem}>
+                          <View style={styles.recentInfo}>
+                            <Text style={styles.recentTitle}>{item.title}</Text>
+                            <Text style={styles.recentMeta}>{item.category} · {item.date}</Text>
+                          </View>
+                          <Text style={[styles.recentAmount, item.type === 'income' ? styles.recentAmountIncome : styles.recentAmountExpense]}>
+                            {item.type === 'income' ? '+' : '-'} {formatCurrency(item.amount)}
+                          </Text>
+                        </View>
+                      ))
+                    )}
+                  </>
                 )}
               </View>
             }
@@ -1209,6 +1301,8 @@ export default function App() {
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Editar usuário</Text>
+            <Text style={styles.inputLabel}>Nome</Text>
+            <TextInput style={styles.input} placeholder="Nome" placeholderTextColor="#94a3b8" value={editingAdminUser?.name ?? ''} onChangeText={(value) => setEditingAdminUser((current) => current && { ...current, name: value })} />
             <Text style={styles.inputLabel}>E-mail</Text>
             <TextInput style={styles.input} placeholder="E-mail" placeholderTextColor="#94a3b8" autoCapitalize="none" keyboardType="email-address" value={editingAdminUser?.email ?? ''} onChangeText={(value) => setEditingAdminUser((current) => current && { ...current, email: value })} />
             <Text style={styles.inputLabel}>Nova senha (opcional)</Text>
@@ -2054,6 +2148,54 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     padding: 16,
     marginTop: 10,
+  },
+
+  adminPrivacyBox: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 8,
+  },
+
+  adminPrivacyTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 4,
+  },
+
+  adminPrivacyText: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 12,
+  },
+
+  unlockedHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+
+  unlockedBadge: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#16a34a',
+  },
+
+  lockButton: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+
+  lockButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
   },
 
   bottomBarContainer: {

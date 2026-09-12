@@ -28,7 +28,8 @@ export type PersistTransactionInput = {
 };
 
 export type AdminUserUpdateInput = {
-  email: string;
+  name?: string;
+  email?: string;
   password?: string;
 };
 
@@ -159,27 +160,50 @@ export const verifyUserCredentials = async (email: string, password: string) => 
   };
 };
 
-export const updateUserByAdmin = async (userId: string, { email, password }: AdminUserUpdateInput) => {
-  const user = await getAsync<{ id: string; name: string }>('SELECT id, name FROM users WHERE id = ?', [userId]);
+export const verifyUserPasswordById = async (userId: string, password: string) => {
+  const user = await getAsync<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', [userId]);
+
+  if (!user) {
+    return false;
+  }
+
+  return user.password_hash === hashPassword(password);
+};
+
+export const updateUserByAdmin = async (userId: string, { name, email, password }: AdminUserUpdateInput) => {
+  const user = await getAsync<{ id: string; name: string; email: string }>('SELECT id, name, email FROM users WHERE id = ?', [userId]);
 
   if (!user) {
     throw new Error('Usuário não encontrado.');
   }
 
-  const normalizedEmail = email.trim().toLowerCase();
-  const duplicate = await getAsync<{ id: string }>('SELECT id FROM users WHERE email = ? AND id != ?', [normalizedEmail, userId]);
+  const updatedName = name && name.trim() ? name.trim() : user.name;
+  const updatedEmail = email && email.trim() ? email.trim().toLowerCase() : user.email;
 
-  if (duplicate) {
-    throw new Error('Este e-mail já está em uso.');
+  if (email !== undefined && updatedEmail !== user.email) {
+    const duplicate = await getAsync<{ id: string }>('SELECT id FROM users WHERE email = ? AND id != ?', [updatedEmail, userId]);
+
+    if (duplicate) {
+      throw new Error('Este e-mail já está em uso.');
+    }
   }
 
-  if (password) {
-    await runAsync('UPDATE users SET email = ?, password_hash = ? WHERE id = ?', [normalizedEmail, hashPassword(password), userId]);
+  if (password && password.trim()) {
+    await runAsync('UPDATE users SET name = ?, email = ?, password_hash = ? WHERE id = ?', [
+      updatedName,
+      updatedEmail,
+      hashPassword(password),
+      userId,
+    ]);
   } else {
-    await runAsync('UPDATE users SET email = ? WHERE id = ?', [normalizedEmail, userId]);
+    await runAsync('UPDATE users SET name = ?, email = ? WHERE id = ?', [
+      updatedName,
+      updatedEmail,
+      userId,
+    ]);
   }
 
-  return { id: user.id, name: user.name, email: normalizedEmail };
+  return { id: userId, name: updatedName, email: updatedEmail };
 };
 
 export const deleteUserByAdmin = async (userId: string) => {

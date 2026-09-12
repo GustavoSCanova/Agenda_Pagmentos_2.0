@@ -38,6 +38,10 @@ function App() {
   const [deleteUserPassword, setDeleteUserPassword] = useState('');
   const [adminUserEdit, setAdminUserEdit] = useState<{ id: string; name: string; email: string; password: string } | null>(null);
   const [selectedAdminUserId, setSelectedAdminUserId] = useState<string | null>(null);
+  const [unlockedWebAdminUserId, setUnlockedWebAdminUserId] = useState<string | null>(null);
+  const [unlockedWebTransactions, setUnlockedWebTransactions] = useState<Array<{ id: string; title: string; amount: number; type: 'income' | 'expense'; category: string; date: string }>>([]);
+  const [webAdminUserPasswordInput, setWebAdminUserPasswordInput] = useState('');
+  const [webAdminFetching, setWebAdminFetching] = useState(false);
   const [adminUserDelete, setAdminUserDelete] = useState<{ id: string; name: string } | null>(null);
   const [importing, setImporting] = useState(false);
   const [adminData, setAdminData] = useState<{ users: Array<{ id: string; name: string; email: string }>; transactions: Array<{
@@ -151,6 +155,7 @@ function App() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
+        name: adminUserEdit.name,
         email: adminUserEdit.email,
         ...(adminUserEdit.password ? { password: adminUserEdit.password } : {}),
       }),
@@ -164,6 +169,30 @@ function App() {
 
     setAdminUserEdit(null);
     void loadAdminData(token);
+  };
+
+  const handleUnlockWebUserTransactions = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!token || !selectedAdminUserId || !webAdminUserPasswordInput) return;
+
+    setWebAdminFetching(true);
+    const response = await fetch(`/api/admin/users/${selectedAdminUserId}/transactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ password: webAdminUserPasswordInput }),
+    });
+
+    const result = await response.json();
+    setWebAdminFetching(false);
+
+    if (!response.ok) {
+      alert(result.message ?? 'Senha do usuário incorreta.');
+      return;
+    }
+
+    setUnlockedWebAdminUserId(selectedAdminUserId);
+    setUnlockedWebTransactions(result);
+    setWebAdminUserPasswordInput('');
   };
 
   const handleAdminUserDelete = async () => {
@@ -668,7 +697,18 @@ function App() {
             <ul className="admin-list">
               {(adminData?.users ?? []).map((item) => (
                 <li key={item.id} className={selectedAdminUserId === item.id ? 'selected-admin-user' : ''}>
-                  <button type="button" className="admin-user-select" onClick={() => setSelectedAdminUserId(item.id)}>
+                  <button
+                    type="button"
+                    className="admin-user-select"
+                    onClick={() => {
+                      setSelectedAdminUserId(item.id);
+                      if (unlockedWebAdminUserId !== item.id) {
+                        setUnlockedWebAdminUserId(null);
+                        setUnlockedWebTransactions([]);
+                        setWebAdminUserPasswordInput('');
+                      }
+                    }}
+                  >
                     <div>
                       <strong>{item.name}</strong>
                       <span>{item.email}</span>
@@ -684,23 +724,57 @@ function App() {
           </div>
 
           <div className="card admin-card">
-            <h2>{selectedAdminUserId ? `Transações de ${(adminData?.users ?? []).find((item) => item.id === selectedAdminUserId)?.name ?? 'usuário'}` : 'Selecione um usuário'}</h2>
-            <ul className="admin-list admin-transactions">
-              {(adminData?.transactions ?? []).filter((item) => item.userId === selectedAdminUserId).map((item) => (
-                <li key={item.id} className="admin-transaction-item">
-                  <div className="transaction-info-admin">
-                    <strong>{item.title}</strong>
-                    <span>{item.userName} · {item.category}</span>
-                  </div>
-                  <div className="transaction-meta-admin">
-                    <span>{item.type === 'income' ? 'Receita' : 'Despesa'}</span>
-                    <strong>R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            {selectedAdminUserId && (adminData?.transactions ?? []).every((item) => item.userId !== selectedAdminUserId) && <p className="empty-admin-state">Este usuário ainda não possui transações.</p>}
-            {!selectedAdminUserId && <p className="empty-admin-state">Clique em um usuário para consultar seus dados.</p>}
+            <h2>{selectedAdminUserId ? `Finanças de ${(adminData?.users ?? []).find((item) => item.id === selectedAdminUserId)?.name ?? 'usuário'}` : 'Selecione um usuário'}</h2>
+            {!selectedAdminUserId ? (
+              <p className="empty-admin-state">Clique em um usuário para consultar seus dados.</p>
+            ) : unlockedWebAdminUserId !== selectedAdminUserId ? (
+              <form className="modal-form" onSubmit={(e) => void handleUnlockWebUserTransactions(e)} style={{ marginTop: '1rem' }}>
+                <p style={{ color: '#475569', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+                  🔒 Por questões de privacidade, insira a senha cadastrada do usuário para visualizar o extrato financeiro:
+                </p>
+                <label>
+                  Senha do Usuário
+                  <input
+                    type="password"
+                    value={webAdminUserPasswordInput}
+                    onChange={(e) => setWebAdminUserPasswordInput(e.target.value)}
+                    placeholder="Senha do usuário"
+                    required
+                  />
+                </label>
+                <button type="submit" className="primary-button" disabled={webAdminFetching || !webAdminUserPasswordInput}>
+                  {webAdminFetching ? 'Verificando...' : 'Desbloquear Extrato'}
+                </button>
+              </form>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <span style={{ color: '#16a34a', fontWeight: 'bold', fontSize: '0.9rem' }}>✅ Extrato Liberado ({unlockedWebTransactions.length} itens)</span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => { setUnlockedWebAdminUserId(null); setUnlockedWebTransactions([]); }}
+                  >
+                    🔒 Bloquear
+                  </button>
+                </div>
+                <ul className="admin-list admin-transactions">
+                  {unlockedWebTransactions.map((item) => (
+                    <li key={item.id} className="admin-transaction-item">
+                      <div className="transaction-info-admin">
+                        <strong>{item.title}</strong>
+                        <span>{item.category} · {item.date}</span>
+                      </div>
+                      <div className="transaction-meta-admin">
+                        <span>{item.type === 'income' ? 'Receita' : 'Despesa'}</span>
+                        <strong>R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {unlockedWebTransactions.length === 0 && <p className="empty-admin-state">Este usuário ainda não possui transações.</p>}
+              </>
+            )}
           </div>
         </section>
       )}
@@ -750,6 +824,7 @@ function App() {
           <div className="modal-box" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header"><h3>Editar {adminUserEdit.name}</h3><button type="button" className="modal-close" onClick={() => setAdminUserEdit(null)}>✕</button></div>
             <form className="modal-form" onSubmit={(event) => { event.preventDefault(); void handleAdminUserUpdate(); }}>
+              <label>Nome<input type="text" value={adminUserEdit.name} onChange={(event) => setAdminUserEdit((current) => current && { ...current, name: event.target.value })} required /></label>
               <label>E-mail<input type="email" value={adminUserEdit.email} onChange={(event) => setAdminUserEdit((current) => current && { ...current, email: event.target.value })} required /></label>
               <label>Nova senha<input type="password" minLength={6} value={adminUserEdit.password} onChange={(event) => setAdminUserEdit((current) => current && { ...current, password: event.target.value })} placeholder="Deixe vazio para manter" /></label>
               <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setAdminUserEdit(null)}>Cancelar</button><button type="submit" className="primary-button">Salvar</button></div>

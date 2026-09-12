@@ -20,6 +20,7 @@ import {
   updateTransactionById,
   updateUserByAdmin,
   verifyUserCredentials,
+  verifyUserPasswordById,
 } from './database.js';
 
 declare global {
@@ -166,21 +167,39 @@ app.get('/api/me', authMiddleware, (req: Request, res: Response) => {
 });
 
 app.get('/api/admin', authMiddleware, adminMiddleware, async (_req: Request, res: Response) => {
-  const [users, transactions] = await Promise.all([listUsers(), listAllTransactions()]);
+  const users = await listUsers();
 
-  return res.json({ users, transactions });
+  return res.json({ users, transactions: [] });
+});
+
+app.post('/api/admin/users/:id/transactions', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const userId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const { password } = req.body as { password?: string };
+
+  if (!password) {
+    return res.status(400).json({ message: 'Informe a senha do usuário para acessar as informações de finanças.' });
+  }
+
+  const isValid = await verifyUserPasswordById(userId, password);
+
+  if (!isValid) {
+    return res.status(401).json({ message: 'Senha do usuário incorreta.' });
+  }
+
+  const transactions = await listTransactions(userId);
+  return res.json(transactions);
 });
 
 app.put('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
   const userId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { email, password } = req.body as { email?: string; password?: string };
+  const { name, email, password } = req.body as { name?: string; email?: string; password?: string };
 
-  if (!email || (password !== undefined && password.length < 6)) {
+  if ((email !== undefined && !email.trim()) || (password !== undefined && password.length > 0 && password.length < 6)) {
     return res.status(400).json({ message: 'Informe um e-mail válido e, se desejar trocar a senha, use ao menos seis caracteres.' });
   }
 
   try {
-    return res.json(await updateUserByAdmin(userId, { email, password }));
+    return res.json(await updateUserByAdmin(userId, { name, email, password }));
   } catch (error) {
     return res.status(400).json({ message: error instanceof Error ? error.message : 'Não foi possível atualizar o usuário.' });
   }

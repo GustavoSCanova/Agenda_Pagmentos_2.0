@@ -14,6 +14,7 @@ import {
   updateTransactionById,
   updateUserByAdmin,
   verifyUserCredentials,
+  verifyUserPasswordById,
 } from './database.js';
 
 describe('persistência do banco', () => {
@@ -65,7 +66,7 @@ describe('persistência do banco', () => {
     assert.equal(deleted, true);
   });
 
-  it('deve permitir ao administrador atualizar e-mail e senha de um usuário', async () => {
+  it('deve permitir ao administrador atualizar nome, e-mail e senha de um usuário e verificar a senha', async () => {
     const user = await createUser({
       name: 'Usuário Administrado',
       email: `administrado-${Date.now()}@persistencia.com`,
@@ -73,9 +74,13 @@ describe('persistência do banco', () => {
     });
     const email = `atualizado-${Date.now()}@persistencia.com`;
 
-    await updateUserByAdmin(user.id, { email, password: 'senha-nova' });
+    assert.ok(await verifyUserPasswordById(user.id, 'senha-antiga'));
+    assert.equal(await verifyUserPasswordById(user.id, 'senha-errada'), false);
+
+    await updateUserByAdmin(user.id, { name: 'Novo Nome Administrado', email, password: 'senha-nova' });
 
     assert.ok(await verifyUserCredentials(email, 'senha-nova'));
+    assert.ok(await verifyUserPasswordById(user.id, 'senha-nova'));
   });
 
   it('deve substituir todas as transações do usuário ao importar uma planilha', async () => {
