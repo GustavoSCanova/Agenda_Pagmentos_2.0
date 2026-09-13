@@ -8,17 +8,17 @@ import { createAuthToken, verifyAuthToken, type AuthUser } from './auth.js';
 import { createTransactionsSpreadsheet, readTransactionsSpreadsheet } from './spreadsheet.js';
 import {
   createUser,
+  deleteTransactionsByUser,
   deleteTransactionById,
   deleteUserByAdmin,
   deleteUserById,
   findUserByEmail,
-  listAllTransactions,
   listTransactions,
   listUsers,
   persistTransaction,
   replaceTransactionsForUser,
   updateTransactionById,
-  updateUserByAdmin,
+  updateUserProfile,
   verifyUserCredentials,
   verifyUserPasswordById,
 } from './database.js';
@@ -166,6 +166,22 @@ app.get('/api/me', authMiddleware, (req: Request, res: Response) => {
   res.json({ user: req.user });
 });
 
+app.put('/api/me', authMiddleware, async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  const { name, password } = req.body as { name?: string; password?: string };
+
+  if (!userId || req.user?.role === 'admin') {
+    return res.status(400).json({ message: 'Apenas usuários cadastrados podem alterar este perfil.' });
+  }
+
+  try {
+    const user = await updateUserProfile(userId, { name, password });
+    return res.json({ user, token: createAuthToken(user) });
+  } catch (error) {
+    return res.status(400).json({ message: error instanceof Error ? error.message : 'Não foi possível atualizar o perfil.' });
+  }
+});
+
 app.get('/api/admin', authMiddleware, adminMiddleware, async (_req: Request, res: Response) => {
   const users = await listUsers();
 
@@ -190,21 +206,6 @@ app.post('/api/admin/users/:id/transactions', authMiddleware, adminMiddleware, a
   return res.json(transactions);
 });
 
-app.put('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
-  const userId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { name, email, password } = req.body as { name?: string; email?: string; password?: string };
-
-  if ((email !== undefined && !email.trim()) || (password !== undefined && password.length > 0 && password.length < 6)) {
-    return res.status(400).json({ message: 'Informe um e-mail válido e, se desejar trocar a senha, use ao menos seis caracteres.' });
-  }
-
-  try {
-    return res.json(await updateUserByAdmin(userId, { name, email, password }));
-  } catch (error) {
-    return res.status(400).json({ message: error instanceof Error ? error.message : 'Não foi possível atualizar o usuário.' });
-  }
-});
-
 app.delete('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
   const userId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
@@ -213,6 +214,17 @@ app.delete('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req: 
     return res.json({ success: true });
   } catch (error) {
     return res.status(404).json({ message: error instanceof Error ? error.message : 'Não foi possível excluir o usuário.' });
+  }
+});
+
+app.delete('/api/admin/users/:id/transactions', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const userId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  try {
+    await deleteTransactionsByUser(userId);
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(404).json({ message: error instanceof Error ? error.message : 'Não foi possível excluir o extrato.' });
   }
 });
 

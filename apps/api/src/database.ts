@@ -27,12 +27,6 @@ export type PersistTransactionInput = {
   description?: string;
 };
 
-export type AdminUserUpdateInput = {
-  name?: string;
-  email?: string;
-  password?: string;
-};
-
 const dataDir = path.join(process.cwd(), 'data');
 fs.mkdirSync(dataDir, { recursive: true });
 
@@ -170,40 +164,34 @@ export const verifyUserPasswordById = async (userId: string, password: string) =
   return user.password_hash === hashPassword(password);
 };
 
-export const updateUserByAdmin = async (userId: string, { name, email, password }: AdminUserUpdateInput) => {
+export const updateUserProfile = async (userId: string, { name, password }: { name?: string; password?: string }) => {
   const user = await getAsync<{ id: string; name: string; email: string }>('SELECT id, name, email FROM users WHERE id = ?', [userId]);
 
   if (!user) {
     throw new Error('Usuário não encontrado.');
   }
 
-  const updatedName = name && name.trim() ? name.trim() : user.name;
-  const updatedEmail = email && email.trim() ? email.trim().toLowerCase() : user.email;
+  const updatedName = name?.trim();
 
-  if (email !== undefined && updatedEmail !== user.email) {
-    const duplicate = await getAsync<{ id: string }>('SELECT id FROM users WHERE email = ? AND id != ?', [updatedEmail, userId]);
-
-    if (duplicate) {
-      throw new Error('Este e-mail já está em uso.');
-    }
+  if (!updatedName && !password) {
+    throw new Error('Informe um nome ou uma nova senha.');
   }
 
-  if (password && password.trim()) {
-    await runAsync('UPDATE users SET name = ?, email = ?, password_hash = ? WHERE id = ?', [
-      updatedName,
-      updatedEmail,
+  if (password !== undefined && password.length < 6) {
+    throw new Error('A nova senha deve ter ao menos seis caracteres.');
+  }
+
+  if (password) {
+    await runAsync('UPDATE users SET name = ?, password_hash = ? WHERE id = ?', [
+      updatedName || user.name,
       hashPassword(password),
       userId,
     ]);
   } else {
-    await runAsync('UPDATE users SET name = ?, email = ? WHERE id = ?', [
-      updatedName,
-      updatedEmail,
-      userId,
-    ]);
+    await runAsync('UPDATE users SET name = ? WHERE id = ?', [updatedName, userId]);
   }
 
-  return { id: userId, name: updatedName, email: updatedEmail };
+  return { id: user.id, name: updatedName || user.name, email: user.email };
 };
 
 export const deleteUserByAdmin = async (userId: string) => {
@@ -215,6 +203,17 @@ export const deleteUserByAdmin = async (userId: string) => {
 
   await runAsync('DELETE FROM transactions WHERE user_id = ?', [userId]);
   await runAsync('DELETE FROM users WHERE id = ?', [userId]);
+  return true;
+};
+
+export const deleteTransactionsByUser = async (userId: string) => {
+  const user = await getAsync<{ id: string }>('SELECT id FROM users WHERE id = ?', [userId]);
+
+  if (!user) {
+    throw new Error('Usuário não encontrado.');
+  }
+
+  await runAsync('DELETE FROM transactions WHERE user_id = ?', [userId]);
   return true;
 };
 

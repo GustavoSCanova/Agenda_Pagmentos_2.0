@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import * as XLSX from 'xlsx';
 
 import { createTransactionsSpreadsheet, readTransactionsSpreadsheet } from './spreadsheet.js';
 
@@ -30,5 +31,21 @@ describe('planilhas de transações', () => {
         description: 'Setembro',
       },
     ]);
+  });
+
+  it('interpreta valores nos formatos brasileiro e americano', () => {
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['Título', 'Valor', 'Tipo', 'Categoria', 'Data', 'Descrição'],
+      ['Brasileiro', 'R$ 2.479,76', 'Receita', 'Teste', '10/09/2026', ''],
+      ['Americano', '$ 2,479.76', 'Despesa', 'Teste', '2026-09-11', ''],
+      ['Decimal simples', '2479.76', 'Despesa', 'Teste', '2026-09-12', ''],
+    ]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Transações');
+
+    const result = readTransactionsSpreadsheet(XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' }));
+
+    assert.deepEqual(result.rejectedRows, []);
+    assert.deepEqual(result.transactions.map((item) => item.amount), [2479.76, 2479.76, 2479.76]);
   });
 });

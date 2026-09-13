@@ -43,13 +43,33 @@ const normalizeAmount = (value: unknown) => {
 
   const rawAmount = String(value ?? '')
     .trim()
-    .replace(/R\$/gi, '');
+    .replace(/R\$/gi, '')
+    .replace(/[^\d,.-]/g, '');
 
-  const amount = rawAmount.includes(',')
-    ? rawAmount.replace(/\./g, '').replace(',', '.')
-    : rawAmount;
+  if (!rawAmount) return Number.NaN;
 
-  return Number(amount);
+  const lastComma = rawAmount.lastIndexOf(',');
+  const lastDot = rawAmount.lastIndexOf('.');
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    const decimalSeparator = lastComma > lastDot ? ',' : '.';
+    const thousandsSeparator = decimalSeparator === ',' ? '.' : ',';
+    return Number(
+      rawAmount.replace(new RegExp(`\\${thousandsSeparator}`, 'g'), '').replace(decimalSeparator, '.'),
+    );
+  }
+
+  if (lastComma >= 0) {
+    const decimals = rawAmount.length - lastComma - 1;
+    return Number(decimals === 3 ? rawAmount.replace(',', '') : rawAmount.replace(',', '.'));
+  }
+
+  if (lastDot >= 0) {
+    const decimals = rawAmount.length - lastDot - 1;
+    return Number(decimals === 3 ? rawAmount.replace('.', '') : rawAmount);
+  }
+
+  return Number(rawAmount);
 };
 
 const normalizeType = (value: unknown): TransactionType | null => {

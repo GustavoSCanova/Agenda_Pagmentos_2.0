@@ -22,7 +22,7 @@ const emptyAuth = {
 type SessionUser = { id: string; name: string; email: string; role?: 'admin' };
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'new' | 'admin'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'new' | 'settings' | 'admin'>('dashboard');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<Summary>({ income: 0, expense: 0, balance: 0 });
   const [form, setForm] = useState(emptyForm);
@@ -36,7 +36,7 @@ function App() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<string | null>(null);
   const [deleteUserPassword, setDeleteUserPassword] = useState('');
-  const [adminUserEdit, setAdminUserEdit] = useState<{ id: string; name: string; email: string; password: string } | null>(null);
+  const [profileForm, setProfileForm] = useState({ name: '', password: '' });
   const [selectedAdminUserId, setSelectedAdminUserId] = useState<string | null>(null);
   const [unlockedWebAdminUserId, setUnlockedWebAdminUserId] = useState<string | null>(null);
   const [unlockedWebTransactions, setUnlockedWebTransactions] = useState<Array<{ id: string; title: string; amount: number; type: 'income' | 'expense'; category: string; date: string }>>([]);
@@ -148,27 +148,30 @@ function App() {
     void loadAdminData(result.token);
   };
 
-  const handleAdminUserUpdate = async () => {
-    if (!token || !adminUserEdit) return;
+  const handleProfileUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!token || !user || (!profileForm.name.trim() && !profileForm.password)) return;
 
-    const response = await fetch(`/api/admin/users/${adminUserEdit.id}`, {
+    const response = await fetch('/api/me', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
-        name: adminUserEdit.name,
-        email: adminUserEdit.email,
-        ...(adminUserEdit.password ? { password: adminUserEdit.password } : {}),
+        ...(profileForm.name.trim() ? { name: profileForm.name.trim() } : {}),
+        ...(profileForm.password ? { password: profileForm.password } : {}),
       }),
     });
     const result = await response.json();
 
     if (!response.ok) {
-      alert(result.message ?? 'Não foi possível atualizar o usuário.');
+      alert(result.message ?? 'Não foi possível atualizar suas configurações.');
       return;
     }
 
-    setAdminUserEdit(null);
-    void loadAdminData(token);
+    saveToken(result.token);
+    setToken(result.token);
+    setUser(result.user);
+    setProfileForm({ name: '', password: '' });
+    alert('Suas configurações foram atualizadas.');
   };
 
   const handleUnlockWebUserTransactions = async (event: React.FormEvent) => {
@@ -214,6 +217,25 @@ function App() {
     }
     setAdminUserDelete(null);
     void loadAdminData(token);
+  };
+
+  const handleAdminTransactionsDelete = async (userId: string, userName: string) => {
+    if (!token || !window.confirm(`Excluir todas as movimentações de ${userName}? Esta ação não pode ser desfeita.`)) return;
+
+    const response = await fetch(`/api/admin/users/${userId}/transactions`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      alert(result.message ?? 'Não foi possível excluir o extrato.');
+      return;
+    }
+
+    setUnlockedWebAdminUserId(null);
+    setUnlockedWebTransactions([]);
+    alert('Extrato excluído.');
   };
 
   const loadAdminData = async (authToken: string) => {
@@ -493,13 +515,22 @@ function App() {
         >
           ➕ Nova Movimentação
         </button>
+        {user.role !== 'admin' && (
+          <button
+            type="button"
+            className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
+            onClick={() => setActiveTab('settings')}
+          >
+            ⚙️ Configurações
+          </button>
+        )}
         {user.role === 'admin' && (
           <button
             type="button"
             className={`tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
             onClick={() => setActiveTab('admin')}
           >
-            ⚙️ Administração
+            🛡️ Administração
           </button>
         )}
       </nav>
@@ -689,6 +720,37 @@ function App() {
         </section>
       )}
 
+      {activeTab === 'settings' && user.role !== 'admin' && (
+        <section className="new-view">
+          <div className="card form-card">
+            <h2>Configurações</h2>
+            <p>Atualize seu nome ou sua senha.</p>
+            <form className="modal-form" onSubmit={(event) => void handleProfileUpdate(event)}>
+              <label>
+                Nome
+                <input
+                  type="text"
+                  value={profileForm.name}
+                  placeholder={user.name}
+                  onChange={(event) => setProfileForm((current) => ({ ...current, name: event.target.value }))}
+                />
+              </label>
+              <label>
+                Nova senha
+                <input
+                  type="password"
+                  minLength={6}
+                  value={profileForm.password}
+                  placeholder="Deixe vazio para manter a atual"
+                  onChange={(event) => setProfileForm((current) => ({ ...current, password: event.target.value }))}
+                />
+              </label>
+              <button type="submit" className="primary-button" disabled={!profileForm.name.trim() && !profileForm.password}>Salvar configurações</button>
+            </form>
+          </div>
+        </section>
+      )}
+
       {/* CONTEÚDO DA ABA ADMIN */}
       {activeTab === 'admin' && user.role === 'admin' && (
         <section className="admin-panel">
@@ -715,7 +777,7 @@ function App() {
                     </div>
                   </button>
                   <div className="admin-user-actions">
-                    <button type="button" className="secondary-button" onClick={() => setAdminUserEdit({ id: item.id, name: item.name, email: item.email, password: '' })}>Editar</button>
+                    <button type="button" className="secondary-button" onClick={() => void handleAdminTransactionsDelete(item.id, item.name)}>Excluir extrato</button>
                     <button type="button" className="danger-button" onClick={() => setAdminUserDelete({ id: item.id, name: item.name })}>Excluir</button>
                   </div>
                 </li>
@@ -815,20 +877,6 @@ function App() {
                 Deletar Conta
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {adminUserEdit && (
-        <div className="modal-overlay" onClick={() => setAdminUserEdit(null)}>
-          <div className="modal-box" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header"><h3>Editar {adminUserEdit.name}</h3><button type="button" className="modal-close" onClick={() => setAdminUserEdit(null)}>✕</button></div>
-            <form className="modal-form" onSubmit={(event) => { event.preventDefault(); void handleAdminUserUpdate(); }}>
-              <label>Nome<input type="text" value={adminUserEdit.name} onChange={(event) => setAdminUserEdit((current) => current && { ...current, name: event.target.value })} required /></label>
-              <label>E-mail<input type="email" value={adminUserEdit.email} onChange={(event) => setAdminUserEdit((current) => current && { ...current, email: event.target.value })} required /></label>
-              <label>Nova senha<input type="password" minLength={6} value={adminUserEdit.password} onChange={(event) => setAdminUserEdit((current) => current && { ...current, password: event.target.value })} placeholder="Deixe vazio para manter" /></label>
-              <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setAdminUserEdit(null)}>Cancelar</button><button type="submit" className="primary-button">Salvar</button></div>
-            </form>
           </div>
         </div>
       )}

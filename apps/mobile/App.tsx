@@ -161,7 +161,7 @@ export default function App() {
   const { width } = useWindowDimensions();
   const compact = width < 390;
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'new' | 'admin'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'new' | 'settings' | 'admin'>('dashboard');
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [summary, setSummary] = useState<Summary>({
@@ -183,9 +183,8 @@ export default function App() {
   const [adminUserPasswordInput, setAdminUserPasswordInput] = useState('');
   const [showAdminUserPasswordInput, setShowAdminUserPasswordInput] = useState(false);
   const [fetchingUserTransactions, setFetchingUserTransactions] = useState(false);
-  const [editingAdminUser, setEditingAdminUser] = useState<(User & { password: string }) | null>(null);
+  const [profileForm, setProfileForm] = useState({ name: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [showAdminEditPassword, setShowAdminEditPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Histórico:
@@ -354,27 +353,61 @@ export default function App() {
     }
   };
 
-  const handleAdminUserUpdate = async () => {
-    if (!token || !editingAdminUser) return;
+  const handleProfileUpdate = async () => {
+    if (!token || !user || (!profileForm.name.trim() && !profileForm.password)) return;
 
     try {
       setLoading(true);
-      await fetchJson(`/api/admin/users/${editingAdminUser.id}`, {
+      const result = await fetchJson<{ user: User; token: string }>('/api/me', {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          name: editingAdminUser.name,
-          email: editingAdminUser.email,
-          ...(editingAdminUser.password ? { password: editingAdminUser.password } : {}),
+          ...(profileForm.name.trim() ? { name: profileForm.name.trim() } : {}),
+          ...(profileForm.password ? { password: profileForm.password } : {}),
         }),
       });
-      setEditingAdminUser(null);
-      await loadAdminData(token);
+      await AsyncStorage.setItem(TOKEN_KEY, result.token);
+      setToken(result.token);
+      setUser(result.user);
+      setProfileForm({ name: '', password: '' });
+      Alert.alert('Sucesso', 'Suas configurações foram atualizadas.');
     } catch (error) {
-      Alert.alert('Erro', error instanceof Error ? error.message : 'Não foi possível atualizar o usuário.');
+      Alert.alert('Erro', error instanceof Error ? error.message : 'Não foi possível atualizar suas configurações.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAdminTransactionsDelete = (selectedUser: User) => {
+    Alert.alert(
+      'Excluir extrato',
+      `Deseja apagar todas as movimentações de ${selectedUser.name}? Esta ação não pode ser desfeita.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            if (!token) return;
+
+            try {
+              setLoading(true);
+              await fetchJson(`/api/admin/users/${selectedUser.id}/transactions`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              setUnlockedTransactions([]);
+              setUnlockedAdminUserId(null);
+              Alert.alert('Sucesso', 'Extrato excluído.');
+            } catch (error) {
+              Alert.alert('Erro', error instanceof Error ? error.message : 'Não foi possível excluir o extrato.');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleAdminUserDelete = (selectedUser: User) => {
@@ -754,6 +787,16 @@ export default function App() {
               <Text style={[styles.topTabLabel, activeTab === 'new' && styles.topTabLabelActive]}>Novo</Text>
             </Pressable>
 
+            {user.role !== 'admin' && (
+              <Pressable
+                style={[styles.topTab, activeTab === 'settings' && styles.topTabActive]}
+                onPress={() => setActiveTab('settings')}
+              >
+                <Text style={styles.topTabIcon}>⚙️</Text>
+                <Text style={[styles.topTabLabel, activeTab === 'settings' && styles.topTabLabelActive]}>Config.</Text>
+              </Pressable>
+            )}
+
             {user.role === 'admin' && (
               <Pressable
                 style={[styles.topTab, activeTab === 'admin' && styles.topTabActive]}
@@ -1095,6 +1138,52 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'settings' && user.role !== 'admin' && (
+          <FlatList
+            data={[]}
+            renderItem={null}
+            keyExtractor={() => 'settings'}
+            showsVerticalScrollIndicator={false}
+            style={styles.tabContentList}
+            contentContainerStyle={styles.tabContent}
+            ListHeaderComponent={
+              <View style={styles.cleanCard}>
+                <Text style={styles.tabHeading}>Configurações</Text>
+                <Text style={styles.tabSubheading}>Atualize seu nome ou sua senha</Text>
+
+                <Text style={styles.inputLabel}>Nome</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder={user.name}
+                  placeholderTextColor="#94a3b8"
+                  value={profileForm.name}
+                  onChangeText={(value) => setProfileForm((current) => ({ ...current, name: value }))}
+                />
+
+                <Text style={styles.inputLabel}>Nova senha</Text>
+                <View style={styles.passwordWrapper}>
+                  <TextInput
+                    style={[styles.input, styles.passwordInput]}
+                    placeholder="Deixe vazio para manter a atual"
+                    placeholderTextColor="#94a3b8"
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    value={profileForm.password}
+                    onChangeText={(value) => setProfileForm((current) => ({ ...current, password: value }))}
+                  />
+                  <Pressable style={styles.eyeButtonAbsolute} onPress={() => setShowPassword((prev) => !prev)}>
+                    <Text style={styles.eyeIcon}>{showPassword ? '👁️' : '🔒'}</Text>
+                  </Pressable>
+                </View>
+
+                <Pressable style={styles.primaryButton} onPress={handleProfileUpdate} disabled={loading}>
+                  <Text style={styles.primaryButtonText}>{loading ? 'Salvando...' : 'Salvar configurações'}</Text>
+                </Pressable>
+              </View>
+            }
+          />
+        )}
+
         {activeTab === 'admin' && user.role === 'admin' && (
           <FlatList
             data={adminData?.users ?? []}
@@ -1115,8 +1204,8 @@ export default function App() {
                   <Text style={styles.adminUserEmail}>{item.email}</Text>
                 </Pressable>
                 <View style={styles.adminUserActions}>
-                  <Pressable style={styles.adminEditButton} onPress={() => setEditingAdminUser({ id: item.id, name: item.name, email: item.email, password: '' })}>
-                    <Text style={styles.adminActionText}>Editar</Text>
+                  <Pressable style={styles.adminEditButton} onPress={() => handleAdminTransactionsDelete(item)} disabled={loading}>
+                    <Text style={styles.adminActionText}>Excluir extrato</Text>
                   </Pressable>
                   <Pressable style={styles.adminDeleteButton} onPress={() => handleAdminUserDelete(item)}>
                     <Text style={styles.adminActionText}>Excluir</Text>
@@ -1290,32 +1379,6 @@ export default function App() {
             </Pressable>
 
             <Pressable style={styles.cancelButton} onPress={() => setEditingTransaction(null)} disabled={loading}>
-              <Text style={styles.cancelButtonText}>Cancelar</Text>
-            </Pressable>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* MODAL DE EDIÇÃO ADMIN */}
-      <Modal visible={editingAdminUser !== null} transparent animationType="slide" onRequestClose={() => setEditingAdminUser(null)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Editar usuário</Text>
-            <Text style={styles.inputLabel}>Nome</Text>
-            <TextInput style={styles.input} placeholder="Nome" placeholderTextColor="#94a3b8" value={editingAdminUser?.name ?? ''} onChangeText={(value) => setEditingAdminUser((current) => current && { ...current, name: value })} />
-            <Text style={styles.inputLabel}>E-mail</Text>
-            <TextInput style={styles.input} placeholder="E-mail" placeholderTextColor="#94a3b8" autoCapitalize="none" keyboardType="email-address" value={editingAdminUser?.email ?? ''} onChangeText={(value) => setEditingAdminUser((current) => current && { ...current, email: value })} />
-            <Text style={styles.inputLabel}>Nova senha (opcional)</Text>
-            <View style={styles.passwordWrapper}>
-              <TextInput style={[styles.input, styles.passwordInput]} placeholder="Nova senha" placeholderTextColor="#94a3b8" secureTextEntry={!showAdminEditPassword} autoCapitalize="none" value={editingAdminUser?.password ?? ''} onChangeText={(value) => setEditingAdminUser((current) => current && { ...current, password: value })} />
-              <Pressable style={styles.eyeButtonAbsolute} onPress={() => setShowAdminEditPassword((prev) => !prev)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Text style={styles.eyeIcon}>{showAdminEditPassword ? '👁️' : '🔒'}</Text>
-              </Pressable>
-            </View>
-            <Pressable style={styles.primaryButton} onPress={handleAdminUserUpdate} disabled={loading}>
-              <Text style={styles.primaryButtonText}>Salvar</Text>
-            </Pressable>
-            <Pressable style={styles.cancelButton} onPress={() => setEditingAdminUser(null)}>
               <Text style={styles.cancelButtonText}>Cancelar</Text>
             </Pressable>
           </View>

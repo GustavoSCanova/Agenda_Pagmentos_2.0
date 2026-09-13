@@ -12,7 +12,7 @@ import {
   persistTransaction,
   replaceTransactionsForUser,
   updateTransactionById,
-  updateUserByAdmin,
+  updateUserProfile,
   verifyUserCredentials,
   verifyUserPasswordById,
 } from './database.js';
@@ -66,20 +66,19 @@ describe('persistência do banco', () => {
     assert.equal(deleted, true);
   });
 
-  it('deve permitir ao administrador atualizar nome, e-mail e senha de um usuário e verificar a senha', async () => {
+  it('deve permitir ao usuário atualizar o próprio nome e senha', async () => {
     const user = await createUser({
       name: 'Usuário Administrado',
       email: `administrado-${Date.now()}@persistencia.com`,
       password: 'senha-antiga',
     });
-    const email = `atualizado-${Date.now()}@persistencia.com`;
 
     assert.ok(await verifyUserPasswordById(user.id, 'senha-antiga'));
     assert.equal(await verifyUserPasswordById(user.id, 'senha-errada'), false);
 
-    await updateUserByAdmin(user.id, { name: 'Novo Nome Administrado', email, password: 'senha-nova' });
+    await updateUserProfile(user.id, { name: 'Novo Nome Administrado', password: 'senha-nova' });
 
-    assert.ok(await verifyUserCredentials(email, 'senha-nova'));
+    assert.ok(await verifyUserCredentials(user.email, 'senha-nova'));
     assert.ok(await verifyUserPasswordById(user.id, 'senha-nova'));
   });
 
