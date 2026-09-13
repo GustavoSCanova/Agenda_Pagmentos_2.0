@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  ActionSheetIOS,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -59,6 +60,8 @@ type TransactionForm = {
   description: string;
   date: string;
 };
+
+const CATEGORY_OPTIONS = ['Alimentação', 'Banco', 'Casa', 'Educação', 'Lazer', 'Mercado', 'Moradia', 'Saúde', 'Transporte', 'Outra'];
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.15.168:3001';
 const TOKEN_KEY = 'finance_token';
@@ -186,6 +189,10 @@ export default function App() {
   const [profileForm, setProfileForm] = useState({ name: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [deleteStatementPassword, setDeleteStatementPassword] = useState('');
+  const [deleteStatementVisible, setDeleteStatementVisible] = useState(false);
+  const [customFormCategory, setCustomFormCategory] = useState(false);
+  const [customEditCategory, setCustomEditCategory] = useState(false);
 
   // Histórico:
   const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
@@ -480,6 +487,7 @@ export default function App() {
       });
 
       setForm(emptyForm);
+      setCustomFormCategory(false);
       await loadData(token);
       setActiveTab('dashboard');
       Alert.alert('Sucesso', 'Transação registrada com sucesso!');
@@ -493,8 +501,66 @@ export default function App() {
     }
   };
 
+  const handleDeleteOwnStatement = async () => {
+    if (!token || !deleteStatementPassword) return;
+
+    try {
+      setLoading(true);
+      await fetchJson('/api/transactions', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ password: deleteStatementPassword }),
+      });
+      setDeleteStatementPassword('');
+      setDeleteStatementVisible(false);
+      await loadData(token);
+      Alert.alert('Extrato excluído', 'Todas as suas movimentações foram removidas.');
+    } catch (error) {
+      Alert.alert('Erro', error instanceof Error ? error.message : 'Não foi possível excluir o extrato.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const chooseCategory = (target: 'form' | 'edit', category: string) => {
+    const isCustom = category === 'Outra';
+
+    if (target === 'form') {
+      setCustomFormCategory(isCustom);
+      setForm((current) => ({ ...current, category: isCustom ? '' : category }));
+    } else {
+      setCustomEditCategory(isCustom);
+      setEditForm((current) => ({ ...current, category: isCustom ? '' : category }));
+    }
+  };
+
+  const openCategoryPicker = (target: 'form' | 'edit') => {
+    const options = [...CATEGORY_OPTIONS, 'Cancelar'];
+    const handleSelection = (index: number) => {
+      if (index < CATEGORY_OPTIONS.length) chooseCategory(target, CATEGORY_OPTIONS[index]);
+    };
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: options.length - 1, title: 'Escolha uma categoria' },
+        handleSelection,
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Escolha uma categoria',
+      undefined,
+      [
+        ...CATEGORY_OPTIONS.map((category) => ({ text: category, onPress: () => chooseCategory(target, category) })),
+        { text: 'Cancelar' },
+      ],
+    );
+  };
+
   const handleEditStart = (transaction: Transaction) => {
     setEditingTransaction(transaction);
+    setCustomEditCategory(!CATEGORY_OPTIONS.includes(transaction.category));
     setEditForm({
       title: transaction.title,
       amount: String(transaction.amount).replace('.', ','),
@@ -980,6 +1046,9 @@ export default function App() {
                     <Text style={[styles.fileActionBtnText, styles.importBtnText]}>📤 Importar Planilha</Text>
                   </Pressable>
                 </View>
+                <Pressable style={styles.deleteStatementButton} onPress={() => setDeleteStatementVisible(true)}>
+                  <Text style={styles.deleteStatementButtonText}>Excluir meu extrato completo</Text>
+                </Pressable>
 
                 {/* LISTA AGRUPADA */}
                 {groupedTransactions.length === 0 ? (
@@ -1096,13 +1165,19 @@ export default function App() {
 
                   <View style={styles.halfInput}>
                     <Text style={styles.inputLabel}>Categoria</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Ex: Moradia, Alimentação"
-                      placeholderTextColor="#94a3b8"
-                      value={form.category}
-                      onChangeText={(value) => setForm((current) => ({ ...current, category: value }))}
-                    />
+                    <Pressable style={styles.selectInput} onPress={() => openCategoryPicker('form')}>
+                      <Text style={[styles.selectInputText, !form.category && styles.placeholderText]}>{form.category || 'Selecione uma categoria'}</Text>
+                      <Text style={styles.selectArrow}>⌄</Text>
+                    </Pressable>
+                    {customFormCategory && (
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Digite a categoria"
+                        placeholderTextColor="#94a3b8"
+                        value={form.category}
+                        onChangeText={(value) => setForm((current) => ({ ...current, category: value }))}
+                      />
+                    )}
                   </View>
                 </View>
 
@@ -1330,13 +1405,19 @@ export default function App() {
 
               <View style={styles.halfInput}>
                 <Text style={styles.inputLabel}>Categoria</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Categoria"
-                  placeholderTextColor="#94a3b8"
-                  value={editForm.category}
-                  onChangeText={(value) => setEditForm((current) => ({ ...current, category: value }))}
-                />
+                <Pressable style={styles.selectInput} onPress={() => openCategoryPicker('edit')}>
+                  <Text style={[styles.selectInputText, !editForm.category && styles.placeholderText]}>{editForm.category || 'Selecione uma categoria'}</Text>
+                  <Text style={styles.selectArrow}>⌄</Text>
+                </Pressable>
+                {customEditCategory && (
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Digite a categoria"
+                    placeholderTextColor="#94a3b8"
+                    value={editForm.category}
+                    onChangeText={(value) => setEditForm((current) => ({ ...current, category: value }))}
+                  />
+                )}
               </View>
             </View>
 
@@ -1383,6 +1464,30 @@ export default function App() {
             </Pressable>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={deleteStatementVisible} transparent animationType="fade" onRequestClose={() => setDeleteStatementVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Excluir extrato completo</Text>
+            <Text style={styles.modalDescription}>Essa ação apagará todas as suas movimentações e não pode ser desfeita.</Text>
+            <Text style={styles.inputLabel}>Confirme sua senha</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Senha de acesso"
+              placeholderTextColor="#94a3b8"
+              secureTextEntry
+              value={deleteStatementPassword}
+              onChangeText={setDeleteStatementPassword}
+            />
+            <Pressable style={styles.dangerButton} onPress={handleDeleteOwnStatement} disabled={loading || !deleteStatementPassword}>
+              <Text style={styles.primaryButtonText}>{loading ? 'Excluindo...' : 'Excluir extrato'}</Text>
+            </Pressable>
+            <Pressable style={styles.cancelButton} onPress={() => setDeleteStatementVisible(false)}>
+              <Text style={styles.cancelButtonText}>Cancelar</Text>
+            </Pressable>
+          </View>
+        </View>
       </Modal>
 
       <StatusBar style="dark" />
@@ -2073,6 +2178,81 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 14,
     color: '#0f172a',
+  },
+
+  selectInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    minHeight: 50,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  selectInputText: {
+    color: '#0f172a',
+    fontSize: 14,
+    flex: 1,
+  },
+
+  placeholderText: {
+    color: '#94a3b8',
+  },
+
+  selectArrow: {
+    color: '#64748b',
+    fontSize: 16,
+  },
+
+  picker: {
+    color: '#0f172a',
+    width: '100%',
+  },
+
+  categoryOption: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    paddingVertical: 14,
+  },
+
+  categoryOptionText: {
+    fontSize: 15,
+    color: '#0f172a',
+    fontWeight: '600',
+  },
+
+  modalDescription: {
+    color: '#64748b',
+    fontSize: 13,
+    marginBottom: 8,
+  },
+
+  dangerButton: {
+    backgroundColor: '#dc2626',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 18,
+  },
+
+  deleteStatementButton: {
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    backgroundColor: '#fff1f2',
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+
+  deleteStatementButtonText: {
+    color: '#b91c1c',
+    fontSize: 13,
+    fontWeight: '700',
   },
 
   rowTwo: {

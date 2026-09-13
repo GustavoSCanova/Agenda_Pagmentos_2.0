@@ -265,6 +265,22 @@ app.get('/api/transactions/export', authMiddleware, async (req: Request, res: Re
   return res.send(file);
 });
 
+app.delete('/api/transactions', authMiddleware, async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  const { password } = req.body as { password?: string };
+
+  if (!userId || req.user?.role === 'admin') {
+    return res.status(400).json({ message: 'Apenas usuários cadastrados podem excluir o próprio extrato.' });
+  }
+
+  if (!password || !(await verifyUserPasswordById(userId, password))) {
+    return res.status(401).json({ message: 'Senha de acesso incorreta.' });
+  }
+
+  await deleteTransactionsByUser(userId);
+  return res.json({ success: true });
+});
+
 app.post('/api/transactions/import', authMiddleware, upload.single('file'), async (req: Request, res: Response) => {
   const userId = req.user?.id;
 

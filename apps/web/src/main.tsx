@@ -19,6 +19,8 @@ const emptyAuth = {
   password: '',
 };
 
+const categoryOptions = ['Alimentação', 'Banco', 'Casa', 'Educação', 'Lazer', 'Mercado', 'Moradia', 'Saúde', 'Transporte'];
+
 type SessionUser = { id: string; name: string; email: string; role?: 'admin' };
 
 function App() {
@@ -34,9 +36,13 @@ function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<{ title: string; amount: number; type: 'income' | 'expense'; category: string; date: string; description?: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleteStatementPassword, setDeleteStatementPassword] = useState('');
+  const [deleteStatementOpen, setDeleteStatementOpen] = useState(false);
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<string | null>(null);
   const [deleteUserPassword, setDeleteUserPassword] = useState('');
   const [profileForm, setProfileForm] = useState({ name: '', password: '' });
+  const [customFormCategory, setCustomFormCategory] = useState('');
+  const [customEditCategory, setCustomEditCategory] = useState('');
   const [selectedAdminUserId, setSelectedAdminUserId] = useState<string | null>(null);
   const [unlockedWebAdminUserId, setUnlockedWebAdminUserId] = useState<string | null>(null);
   const [unlockedWebTransactions, setUnlockedWebTransactions] = useState<Array<{ id: string; title: string; amount: number; type: 'income' | 'expense'; category: string; date: string }>>([]);
@@ -274,7 +280,7 @@ function App() {
         title: form.title,
         amount: Number(form.amount),
         type: form.type,
-        category: form.category,
+        category: form.category || (customFormCategory === '__custom__' ? '' : customFormCategory),
         date: form.date,
         description: form.description,
       }),
@@ -282,6 +288,7 @@ function App() {
 
     if (response.ok) {
       setForm(emptyForm);
+      setCustomFormCategory('');
       void loadData(token);
       void loadAdminData(token);
       setActiveTab('dashboard');
@@ -289,6 +296,7 @@ function App() {
   };
 
   const handleEditStart = (transaction: Transaction) => {
+    setCustomEditCategory(categoryOptions.includes(transaction.category) ? '' : transaction.category);
     setEditFormData({
       title: transaction.title,
       amount: transaction.amount,
@@ -318,7 +326,7 @@ function App() {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(editFormData),
+      body: JSON.stringify({ ...editFormData, category: editFormData.category || (customEditCategory === '__custom__' ? '' : customEditCategory) }),
     });
 
     if (response.ok) {
@@ -350,6 +358,27 @@ function App() {
     } else {
       alert('Erro ao excluir transação.');
     }
+  };
+
+  const handleDeleteOwnStatement = async () => {
+    if (!token || !deleteStatementPassword) return;
+
+    const response = await fetch('/api/transactions', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ password: deleteStatementPassword }),
+    });
+
+    if (!response.ok) {
+      const result = await response.json();
+      alert(result.message ?? 'Senha incorreta.');
+      return;
+    }
+
+    setDeleteStatementPassword('');
+    setDeleteStatementOpen(false);
+    void loadData(token);
+    alert('Extrato excluído com sucesso.');
   };
 
   const handleDeleteUser = async () => {
@@ -623,6 +652,7 @@ function App() {
                     disabled={importing}
                   />
                 </label>
+                <button type="button" className="danger-button" onClick={() => setDeleteStatementOpen(true)}>Excluir meu extrato completo</button>
               </div>
             </div>
 
@@ -701,7 +731,12 @@ function App() {
             <div className="inline-fields">
               <label>
                 Categoria
-                <input name="category" value={form.category} onChange={handleChange} placeholder="Ex: Alimentação, Moradia" required />
+                <select name="category" value={form.category === '' ? (customFormCategory ? '__custom__' : '') : form.category} onChange={(event) => { const value = event.target.value; setCustomFormCategory(value === '__custom__' ? '__custom__' : ''); setForm((current) => ({ ...current, category: value === '__custom__' ? '' : value })); }} required>
+                  <option value="">Selecione uma categoria</option>
+                  {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
+                  <option value="__custom__">Outra</option>
+                </select>
+                {customFormCategory !== '' && <input value={customFormCategory === '__custom__' ? '' : customFormCategory} onChange={(event) => setCustomFormCategory(event.target.value)} placeholder="Digite uma categoria" required />}
               </label>
 
               <label>
@@ -894,6 +929,29 @@ function App() {
         </div>
       )}
 
+      {deleteStatementOpen && (
+        <div className="modal-overlay" onClick={() => setDeleteStatementOpen(false)}>
+          <div className="modal-box modal-confirm" onClick={(event) => event.stopPropagation()}>
+            <h3>Excluir meu extrato completo</h3>
+            <p>Essa ação apagará todas as suas movimentações e não pode ser desfeita.</p>
+            <label>
+              Confirme sua senha
+              <input
+                type="password"
+                value={deleteStatementPassword}
+                onChange={(event) => setDeleteStatementPassword(event.target.value)}
+                placeholder="Senha de acesso"
+                required
+              />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="secondary-button" onClick={() => setDeleteStatementOpen(false)}>Cancelar</button>
+              <button type="button" className="danger-button" onClick={() => void handleDeleteOwnStatement()} disabled={!deleteStatementPassword}>Excluir extrato</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editingId && editFormData && (
         <div className="modal-overlay" onClick={() => { setEditingId(null); setEditFormData(null); }}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
@@ -932,11 +990,14 @@ function App() {
               </label>
               <label>
                 Categoria
-                <input
-                  type="text"
-                  value={editFormData.category}
-                  onChange={(event) => handleEditChange('category', event.target.value)}
-                />
+                <select
+                  value={editFormData.category === '' ? (customEditCategory ? '__custom__' : '') : editFormData.category}
+                  onChange={(event) => { const value = event.target.value; setCustomEditCategory(value === '__custom__' ? '__custom__' : ''); handleEditChange('category', value === '__custom__' ? '' : value); }}
+                >
+                  {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
+                  <option value="__custom__">Outra</option>
+                </select>
+                {customEditCategory !== '' && <input value={customEditCategory === '__custom__' ? '' : customEditCategory} onChange={(event) => setCustomEditCategory(event.target.value)} placeholder="Digite uma categoria" required />}
               </label>
               <label>
                 Data
